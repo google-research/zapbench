@@ -1,0 +1,83 @@
+[project]
+name = "zapbench"
+description = ""
+readme = "README.md"
+requires-python = ">=3.8"
+license = {file = "LICENSE"}
+authors = [{name = "ZAPBench authors", email="zapbench@google.com"}]
+classifiers = [  # List of https://pypi.org/classifiers/
+    "License :: OSI Approved :: Apache Software License",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3.12",
+]
+keywords = []
+
+# pip dependencies of the project
+# Installed locally with `pip install -e .`
+dependencies = [
+  "absl-py",
+  "altair<=5.0.0",
+  "chex",
+  "clu",
+  "connectomics @ git+https://github.com/google-research/connectomics@main",
+  "distrax",
+  "dm_pix",
+  "einops",
+  "flax",
+  "gin-config",
+  "grain-nightly",
+  "immutabledict",
+  "jax",
+  "ml-collections",
+  "numpy",
+  "optax",
+  "pandas",
+  # scenic is required for connectomics.jax.models.attention.
+  "scenic @ git+https://github.com/google-research/scenic@main",
+  "scikit-learn",  # required for connectomics.jax.metrics
+  "scikit-image",
+  "tensorstore",
+  "tensorflow-probability",  # required by distrax
+  "tf-keras",  # required by tensorflow-probability
+]
+
+# `version` is automatically set by flit to use `zapbench.__version__`
+dynamic = ["version"]
+
+[project.urls]
+homepage = "https://github.com/google-research/zapbench"
+repository = "https://github.com/google-research/zapbench"
+changelog = "https://github.com/google-research/zapbench/blob/main/CHANGELOG.md"
+# documentation = ""
+
+[project.optional-dependencies]
+# Development deps (unittest, linting, formating,...)
+# Installed through `pip install -e .[dev]`
+dev = [
+    "pytest",
+    "pytest-xdist",
+    "pylint>=2.6.0",
+    "pyink",
+]
+
+[tool.pyink]
+# Formatting configuration to follow Google style-guide
+line-length = 80
+unstable = true
+pyink-indentation = 2
+pyink-use-majority-quotes = true
+
+[build-system]
+# Build system specify which backend is used to build/install the project (flit,
+# poetry, setuptools,...). All backends are supported by `pip install`
+requires = ["flit_core >=3.8,<4"]
+build-backend = "flit_core.buildapi"
+
+[tool.flit.sdist]
+# Flit specific options (files to exclude from the PyPI package).
+# If using another build backend (setuptools, poetry), you can remove this
+# section.
+exclude = [
+  # Do not release tests files on PyPI
+  "**/*_test.py",
+]

@@ -364,7 +364,7 @@ def get_per_step_metrics_from_dict(
   """Extracts per-step metrics from results dictionary."""
   rows = []
   for k in results_dict.keys():
-    if 'step/' not in k or metric.lower() not in k.lower():
+    if 'step' not in k or '/' not in k or metric.lower() not in k.lower():
       continue
     _, steps_ahead = k.split('/')
     row = {
@@ -387,9 +387,9 @@ def get_per_step_metrics_from_directory(
   """Gets per-step results from all json-files in a directory."""
   dfs = []
   for json_file in [
-      f for f in file.ListDirectory(directory) if f.endswith('.json')
+      f for f in file.Path(directory).iterdir() if str(f).endswith('.json')
   ]:
-    with file.Open(f'{directory}/{json_file}', 'r') as f:
+    with file.Path(f'{directory}/{json_file}').open('rt') as f:
       loaded_json_file = json.loads(f.read())
       df = get_per_step_metrics_from_dict(
           loaded_json_file, metric=metric, include_key=include_key
@@ -398,7 +398,7 @@ def get_per_step_metrics_from_directory(
         df['file'] = f'{directory}/{json_file}'
       if include_condition:
         df['condition'] = constants.CONDITION_NAMES[
-            get_condition_number_from_string(json_file)
+            get_condition_number_from_string(str(json_file))
         ]
       dfs.append(df)
   return pd.concat(dfs)

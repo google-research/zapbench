@@ -158,8 +158,8 @@ def get_config(
   c.interrupt_tag_interval = 30.0  # 0.5 min
 
   if seed is None or (isinstance(seed, int) and seed < 0):
-    Generate a random seed.
-    c.seed = random.randint(1, 2**32 - 1)
+    # Generate a random seed.
+    c.seed = random.randint(1, 2_147_483_646)
   else:
     c.seed = seed
 

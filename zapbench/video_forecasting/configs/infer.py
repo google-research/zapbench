@@ -28,14 +28,14 @@ def get_config(store: str) -> ml_collections.ConfigDict:
   """
   c = ml_collections.ConfigDict()
   c.xm_id = 0  # training xm id to load checkpoint from
-  c.xm_wid = 1  # for example within a grid (defaults to 1 = single exp.)
+  c.work_unit = 1  # for example within a grid (defaults to 1 = single exp.)
   c.cpoint_id = -1  # checkpoint id (>0) or otherwise use latest
   c.exp_workdir = ''  # defaults to inference workdir if empty
   c.split = 'test'  # data split in ['train', 'val', 'test', 'test_holdout']
   c.condition = 0  # fish 2.0 condition to evaluate on
   c.write_video_forecast = False
   c.write_video_frequency = 1
-  c.write_trace_forecast = True
+  c.write_trace_forecast = False
   c.write_trace_frequency = 1
   c.mask_video = False
   c.write_queue = 50
@@ -44,9 +44,13 @@ def get_config(store: str) -> ml_collections.ConfigDict:
       'driver': 'zarr3',
       'kvstore': {'driver': 'file'}
   }
-  c.mesh_shape = (1, 1, 4, 4)
+  c.mesh_shape = (1, 1, 1, 1)  # for the manuscript, (1, 1, 4, 4) was used
   c.mesh_names = ('batch', 't', 'x', 'y')
   # how batch dimensions map to mesh axes
   c.mesh_names_batch = ('batch', 't', 'x', 'y')
   c.mesh_names_stimulus = ('batch', 't')
+  c.infer_save_json = True
+  # {workdir}, {base_path}, {xm_id}, {work_unit}, {cpoint_id} will be replaced
+  # if present in `json_path_prefix`.
+  c.json_path_prefix = 'file://{base_path}/{xm_id}/{work_unit}/{cpoint_id}'
   return c

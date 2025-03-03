@@ -21,6 +21,7 @@ from absl import logging
 import chex
 from clu import metric_writers
 from clu import metrics
+from connectomics.common import ts_utils
 from connectomics.jax import training
 import flax
 import flax.linen as nn
@@ -54,12 +55,16 @@ class Metrics(metrics.Collection):
   )
   trace_step_mse: vid_metrics.PerStepAverage.from_fun(
       vid_metrics.make_per_step_metric(
-          vid_metrics.make_trace_based_metric(vid_metrics.mse)
+          vid_metrics.make_trace_based_metric_with_extracted_traces(
+              vid_metrics.mse
+          )
       )
   )
   trace_step_mae: vid_metrics.PerStepAverage.from_fun(
       vid_metrics.make_per_step_metric(
-          vid_metrics.make_trace_based_metric(vid_metrics.mae)
+          vid_metrics.make_trace_based_metric_with_extracted_traces(
+              vid_metrics.mae
+          )
       )
   )
 
@@ -176,25 +181,28 @@ def predict(
   if mask_video:
     predictions = predictions * loss_mask
 
-  metrics_update = Metrics.single_from_model_output(
-      loss=loss,
-      predictions=predictions,
-      targets=sample['output_frames'],
-      video=True,
-      has_channel=True,
-      dynamic_range=config.data_config.dynamic_range,
-      trace_mask=trace_mask.segment_ids,
-      trace_counts=trace_mask.counts,
-      nan_to_zero=True,
-  )
   trace_predictions = vid_metrics.extract_traces(
-      predictions, trace_mask.segment_ids[..., jnp.newaxis], trace_mask.counts
+      predictions,
+      trace_mask.segment_ids[..., jnp.newaxis],
+      trace_mask.counts,
   )
   trace_targets = vid_metrics.extract_traces(
       sample['output_frames'],
       trace_mask.segment_ids[..., jnp.newaxis],
       trace_mask.counts,
   )
+
+  metrics_update = Metrics.single_from_model_output(
+      loss=loss,
+      predictions=predictions,
+      targets=sample['output_frames'],
+      video=True,
+      dynamic_range=config.data_config.dynamic_range,
+      trace_targets=trace_targets,
+      trace_predictions=trace_predictions,
+      nan_to_zero=True,
+  )
+
   return predictions, trace_predictions, trace_targets, metrics_update, state
 
 
@@ -260,25 +268,28 @@ def predict_bw(
   grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
   (loss, predictions), grad = grad_fn(state.params)
 
-  metrics_update = Metrics.single_from_model_output(
-      loss=loss,
-      predictions=predictions,
-      targets=sample['output_frames'],
-      video=True,
-      has_channel=True,
-      dynamic_range=config.data_config.dynamic_range,
-      trace_mask=trace_mask.segment_ids,
-      trace_counts=trace_mask.counts,
-      nan_to_zero=True,
-  )
   trace_predictions = vid_metrics.extract_traces(
-      predictions, trace_mask.segment_ids[..., jnp.newaxis], trace_mask.counts
+      predictions,
+      trace_mask.segment_ids[..., jnp.newaxis],
+      trace_mask.counts,
   )
   trace_targets = vid_metrics.extract_traces(
       sample['output_frames'],
       trace_mask.segment_ids[..., jnp.newaxis],
       trace_mask.counts,
   )
+
+  metrics_update = Metrics.single_from_model_output(
+      loss=loss,
+      predictions=predictions,
+      targets=sample['output_frames'],
+      video=True,
+      dynamic_range=config.data_config.dynamic_range,
+      trace_targets=trace_targets,
+      trace_predictions=trace_predictions,
+      nan_to_zero=True,
+  )
+
   return predictions, trace_predictions, trace_targets, metrics_update, grad
 
 
@@ -296,6 +307,24 @@ def write_metrics(
       scalars_t = {k: v[t] for k, v in scalars.items()}
       writer.write_scalars(step=time_step, scalars=scalars_t)
       time_step += 1
+
+
+def metrics_to_dict(
+    temporal_metrics: dict[int, Metrics],
+    num_pred_steps: int,
+    timesteps_output: int,
+):
+  """Convert scalar performances for different lead times to dict."""
+  metrics_dict = {}
+  time_step = 1
+  for i in range(num_pred_steps):
+    scalars = temporal_metrics[i].compute()
+    for _ in range(timesteps_output):
+      for k, v in scalars.items():
+        assert len(v) == 1
+        metrics_dict[f'{k}/{time_step}'] = float(v[0])
+      time_step += 1
+  return metrics_dict
 
 
 def combine_input_and_prediction(
@@ -563,8 +592,17 @@ def infer(config: ml_collections.ConfigDict, infer_workdir: str):
             video_writer.write_pred(t, t_slice, gather(pred_frames[0, ..., 0]))
           if t % config.write_trace_frequency == 0:
             # remove batch dimension
-            trace_writer.write_true(t, t_slice, gather(target_trace[0]))
-            trace_writer.write_pred(t, t_slice, gather(pred_trace[0]))
+            target_trace_out = gather(target_trace[0])
+            pred_trace_out = gather(pred_trace[0])
+
+            # TODO(jan-matthis,mjanusz): confirm that this always holds
+            assert target_trace_out.shape[0] == 1
+            assert pred_trace_out.shape[0] == 1
+            target_trace_out = target_trace_out[0]
+            pred_trace_out = pred_trace_out[0]
+
+            trace_writer.write_true(t, t_slice, target_trace_out)
+            trace_writer.write_pred(t, t_slice, pred_trace_out)
           temporal_metrics[i] = temporal_metrics[i].merge(metrics_update)
         if not sample_lead_time and num_pred_steps > 1:
           # combine forecast with input for autoregressive forecast
@@ -582,6 +620,22 @@ def infer(config: ml_collections.ConfigDict, infer_workdir: str):
         write_metrics(
             writer, temporal_metrics, num_pred_steps, timesteps_output
         )
+        if config.infer_save_json:
+          ts_utils.write_json(
+              to_write=metrics_to_dict(
+                  temporal_metrics, num_pred_steps, timesteps_output
+              ),
+              kvstore=os.path.join(
+                  config.json_path_prefix.format(
+                      workdir=infer_workdir,
+                      base_path=config.base_path,
+                      xm_id=config.xm_id,
+                      work_unit=config.work_unit,
+                      cpoint_id=config.cpoint_id,
+                  ),
+                  f'{config.split}_condition_{config.condition}.json'
+              ),
+          )
 
     trace_writer.flush()
     video_writer.flush()

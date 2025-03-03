@@ -72,10 +72,20 @@ def extract_traces(
   )
 
 
+def _nan_to_zero_traces(
+    trace_predictions: jnp.ndarray, trace_targets: jnp.ndarray
+) -> tuple[jnp.ndarray, jnp.ndarray]:
+  """Convert nans to zeros in trace predictions and targets."""
+  kwargs = dict(nan=0.0, posinf=0.0, neginf=0.0)
+  trace_predictions = jnp.nan_to_num(trace_predictions, **kwargs)
+  trace_targets = jnp.nan_to_num(trace_targets, **kwargs)
+  return trace_predictions, trace_targets
+
+
 def make_trace_based_metric(
     metric: Callable[..., jnp.ndarray],
 ) -> Callable[..., jnp.ndarray]:
-  """Construct metric based on trace given by mask and voxel counts."""
+  """Construct trace-based metric with mask and voxel counts."""
 
   def _trace_metric(
       predictions: jnp.ndarray,
@@ -92,11 +102,39 @@ def make_trace_based_metric(
     trace_predictions = extract_traces(predictions, trace_mask, trace_counts)
     trace_targets = extract_traces(targets, trace_mask, trace_counts)
     if nan_to_zero:
-      kwargs = dict(nan=0.0, posinf=0.0, neginf=0.0)
-      trace_predictions = jnp.nan_to_num(trace_predictions, **kwargs)
-      trace_targets = jnp.nan_to_num(trace_targets, **kwargs)
+      trace_predictions, trace_targets = _nan_to_zero_traces(
+          trace_predictions, trace_targets
+      )
     return metric(
         predictions=trace_predictions, targets=trace_targets, **kwargs
+    )
+
+  return _trace_metric
+
+
+def make_trace_based_metric_with_extracted_traces(
+    metric: Callable[..., jnp.ndarray],
+) -> Callable[..., jnp.ndarray]:
+  """Construct trace-based metric based with extracted traces."""
+
+  def _trace_metric(
+      trace_predictions: jnp.ndarray,
+      trace_targets: jnp.ndarray,
+      nan_to_zero: bool = False,
+      **kwargs,
+  ) -> jnp.ndarray:
+    if nan_to_zero:
+      trace_predictions, trace_targets = _nan_to_zero_traces(
+          trace_predictions, trace_targets
+      )
+    return metric(
+        predictions=trace_predictions,
+        targets=trace_targets,
+        **{
+            k: v
+            for k, v in kwargs.items()
+            if k not in ('predictions', 'targets')
+        },
     )
 
   return _trace_metric

@@ -762,7 +762,3 @@ def train_and_evaluate(config: ml_collections.ConfigDict, workdir: str):
     # is no longer complete, which will cause an immediate restart of the
     # current process via std::quick_exit(42).
     time.sleep(60)
-
-    # This return code causes Borglet to restart the binary without changing
-    # the state of the task as seen by the Borg Prime.
-    os._exit(42)  # pylint:disable=protected-access

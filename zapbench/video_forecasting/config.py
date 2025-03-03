@@ -135,7 +135,7 @@ def get_video_prediction_config() -> ml_collections.ConfigDict:
 
   # meshing and sharding settings
   # should be ordered by ease to distribute (batch -> spatial -> ..)
-  c.mesh_shape = (1, 1, 4, 4)
+  c.mesh_shape = (1, 1, 1, 1)  # for the manuscript, (1, 1, 4, 4) was used
   c.mesh_names = ('batch', 't', 'x', 'y')
   # how batch dimensions map to mesh axes
   c.mesh_names_batch = ('batch', 't', 'x', 'y')

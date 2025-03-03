@@ -286,6 +286,16 @@ def _get_tooltip_href_kwargs(data: pd.DataFrame, metric: str) -> dict[str, Any]:
   return tooltip_href_kwargs
 
 
+def _get_default_scale_bins(metric: str) -> Sequence[float]:
+  """Gets the default scale bins for the y-axis."""
+  if metric == 'MAE':
+    return (0.015, 0.02, 0.025, 0.03, 0.035)
+  elif metric == 'MSE':
+    return (0.0001, 0.0010, 0.0018, 0.0027, 0.0035)
+  else:
+    raise ValueError(f'Unsupported metric: {metric}')
+
+
 def plot_points_and_naive_baselines(
     data: Any,
     metric: str = 'MAE',
@@ -294,22 +304,20 @@ def plot_points_and_naive_baselines(
     facet_width: int = 150,
     facet_height: int = 150,
     conditions_as_rows: bool = False,
+    bins: Sequence[float] | None = None,
 ) -> FacetChart:
   """Plots points and naive baselines."""
-  assert metric in ('MAE', 'MSE')
   _validate_data_for_plotting(
       data, ('context', 'method', 'steps_ahead', 'xid', metric)
   )
 
   data_plot = _prepare_data_for_plotting(data)
+  if bins is None:
+    bins = _get_default_scale_bins(metric)
 
   x_scale, y_scale, color_scale, shape_scale = _get_scales(
       data_plot,
-      bins=(
-          (0.015, 0.02, 0.025, 0.03, 0.035)
-          if metric == 'MAE'
-          else (0.0001, 0.0010, 0.0018, 0.0027, 0.0035)
-      ),
+      bins=bins,
       color_map=color_map,
       shape_map=shape_map,
       exclude=('mean', 'stimulus'),
@@ -370,9 +378,9 @@ def plot_bars_and_naive_baselines(
     facet_width: int = 150,
     facet_height: int = 150,
     conditions_as_rows: bool = False,
+    bins: Sequence[float] | None = None,
 ) -> FacetChart:
   """Plots bars and naive baselines."""
-  assert metric in ('MAE', 'MSE')
   _validate_data_for_plotting(
       data, ('context', 'method', 'steps_ahead', 'xid', metric)
   )
@@ -384,14 +392,12 @@ def plot_bars_and_naive_baselines(
       .to_frame()
       .reset_index()
   )
+  if bins is None:
+    bins = _get_default_scale_bins(metric)
 
   x_scale, y_scale, color_scale, _ = _get_scales(
       data_plot,
-      bins=(
-          (0.015, 0.02, 0.025, 0.03, 0.035)
-          if metric == 'MAE'
-          else (0.000, 0.001, 0.002, 0.003, 0.004)
-      ),
+      bins=bins,
       color_map=color_map,
       shape_map=shape_map,
       exclude=('mean', 'stimulus'),

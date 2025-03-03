@@ -1,0 +1,1617 @@
+r = '''Alignment and normalization of the functional data.
+
+Pipeline config for `materialize_tensor` which is open-sourced as part of the
+connectomics repository:
+https://github.com/google-research/connectomics/blob/main/connectomics/pipeline/materialize_tensor.py
+'''
+
+# Pipeline steps.
+multirun.steps = [
+    @anatomy_clahe/run,
+    @mask_clahe/run,
+    @mask_clahe_cleaned/filter_mask,
+    @functional_raw_upsampled/run,
+    @functional_translational_transforms/run,
+    @functional_translational_transforms_filt/run,
+    @functional_translational_warped/run,
+    @functional_translational_map/run,
+    @mask_boundary/write_boundary_mask_to_tensorstore,
+    @functional_elastic_1_flows/run,
+    @functional_elastic_1_flows_cleaned/run,
+    @functional_elastic_1_mesh/run,
+    @functional_elastic_1_warped/run,
+    @functional_elastic_1_map/run,
+    @functional_elastic_2_flows/run,
+    @functional_elastic_2_flows_cleaned/run,
+    @functional_elastic_2_mesh/run,
+    @functional_elastic_2_warped/run,
+    @functional_elastic_2_map/run,
+    @functional_aligned_map_filt/run,
+    @functional_aligned_raw_warped/run,
+    @functional_aligned_raw_warped_xt/reshard_tensor_xy2xt,
+    @functional_aligned_raw_normalized_percentiles_xt/compute_percentiles,
+    @functional_aligned_raw_normalized_percentiles_xy/reshard_tensor_xt2xy,
+    @functional_aligned_raw_normalized_percentiles_xy_filt/run,
+    @functional_aligned_raw_normalized_df_over_f/run,
+    @functional_aligned_raw_normalized_df_over_f_clipped_multiscale/run,
+    @functional_aligned_raw_normalized_df_over_f_clipped_xt/reshard_tensor_xy2xt,
+    @functional_aligned_raw_normalized_df_over_f_clipped_xt_s2/reshard_tensor_xy2xt,
+    @functional_aligned_raw_normalized_df_over_f_clipped_multiscale_zchunked/run,
+    @functional_aligned_raw_normalized_evoked_baseline_xt/run,
+    @functional_aligned_raw_normalized_evoked_baseline_xy/reshard_tensor_xt2xy,
+]
+
+input_path = 'gs://zapbench-release/volumes/20240930'
+
+output_path = 'gs://...'  # Destination GCS bucket and folder.
+output_path_temp = %output_path  # Can be used for temporary files.
+
+size_x = 2048
+size_y = 1328
+size_t = 7879
+size_z_anatomy = 288
+size_z_functional = 72
+
+driver = 'zarr3'
+extra_flags_cpu = {}
+extra_flags_gpu = {}
+runner = {}
+
+total_bytes_limit = 10_000_000_000  # Cache pool limit for TensorStore.
+
+anatomy_raw_kv/list_to_str.strings = [%input_path, '/anatomy/']
+anatomy_raw_kv/list_to_str.separator = ''
+
+functional_raw_kv/list_to_str.strings = [%input_path, '/raw/']
+functional_raw_kv/list_to_str.separator = ''
+
+
+# ------------------------------------------------------------------------------
+# %output_path_temp/anatomy/clahe/
+# ------------------------------------------------------------------------------
+# - Apply CLAHE to the raw anatomy data.
+
+anatomy_clahe/run.virtual_decorators = [
+    @anatomy_clahe/ExposureFilter(),
+    @anatomy_clahe/MeanProjection(),
+    @anatomy_clahe/CLAHEFilter(),
+    @anatomy_clahe/Write()
+]
+anatomy_clahe/run.input_spec = {
+    'open': True,
+    'driver': %driver,
+    'kvstore': @anatomy_raw_kv/list_to_str(),
+}
+anatomy_clahe/run.extra_flags = %extra_flags_cpu
+
+anatomy_clahe/ExposureFilter.mode = 'rescale_intensity'
+anatomy_clahe/ExposureFilter.cast_float64 = True
+anatomy_clahe/ExposureFilter.min_chunksize = (%size_x, %size_y, %size_z_anatomy, 1)
+
+anatomy_clahe/MeanProjection.projection_dim = 3
+
+anatomy_clahe/CLAHEFilter.kernel_size = (128, 128, 16)
+anatomy_clahe/CLAHEFilter.min_chunksize = (%size_x, %size_y, %size_z_anatomy)
+anatomy_clahe/CLAHEFilter.nbins = 1024
+
+anatomy_clahe_kv/list_to_str.strings = [%output_path, '/anatomy/clahe/']
+anatomy_clahe_kv/list_to_str.separator = ''
+anatomy_clahe/Write.output_spec_overrides = {
+    'create': True,
+    'open': True,
+    'driver': %driver,
+    'kvstore': @anatomy_clahe_kv/list_to_str(),
+    'schema': {
+        'chunk_layout': {
+            'read_chunk': { 'shape': [512, 512, 1] },
+            'write_chunk': { 'shape': [512, 512, 1] },
+        },
+        'codec': {
+            'driver': %driver,
+            'compression': %SpecAction.CLEAR,
+            'codecs': [{
+                'name': 'blosc',
+                'configuration': {'cname': 'zstd', 'clevel': 4}}],
+        },
+    },
+}
+
+
+# ------------------------------------------------------------------------------
+# %output_path_temp/mask/clahe/
+# ------------------------------------------------------------------------------
+# - Generate a mask for the CLAHE volume, where background is 0 and foreground
+#   is 1.
+
+mask_clahe/run.virtual_decorators = [
+    @mask_clahe/ActiveContoursMaskFilter(),
+    @mask_clahe/Write()
+]
+mask_clahe/run.input_spec = {
+    'open' : True,
+    'driver': %driver,
+    'kvstore': @anatomy_clahe_kv/list_to_str(),
+}
+mask_clahe/run.extra_flags = %extra_flags_cpu
+
+mask_clahe/ActiveContoursMaskFilter.min_chunksize = (%size_x, %size_y, 1)
+mask_clahe/ActiveContoursMaskFilter.background = (10, 10)
+mask_clahe/ActiveContoursMaskFilter.num_iter_dilation = 10
+mask_clahe/ActiveContoursMaskFilter.num_iter_erosion = 10
+mask_clahe/ActiveContoursMaskFilter.fill_holes = False
+
+mask_clahe_kv/list_to_str.strings = [
+    %output_path_temp, '/mask/clahe/'
+]
+mask_clahe_kv/list_to_str.separator = ''
+mask_clahe/Write.output_spec_overrides = {
+    'create': True,
+    'open': True,
+    'driver': %driver,
+    'kvstore': @mask_clahe_kv/list_to_str(),
+    'schema': {
+        'chunk_layout': {
+            'read_chunk': { 'shape': [512, 512, 1] },
+            'write_chunk': { 'shape': [512, 512, 1] },
+        },
+    }
+}
+
+
+# ------------------------------------------------------------------------------
+# %output_path_temp/mask/clahe_cleaned/
+# ------------------------------------------------------------------------------
+# - Post-process mask: removes small objects and dilates the mask such that the
+#   resulting mask is more conservative wrt to what is considered background.
+
+mask_clahe_cleaned/filter_mask.input_spec = {
+    'open' : True,
+    'driver': %driver,
+    'kvstore': @mask_clahe_kv/list_to_str(),
+}
+mask_clahe_cleaned/filter_mask.query = 'area > 2500'
+mask_clahe_cleaned/filter_mask.num_iter_dilation = 10
+
+mask_clahe_cleaned_kv/list_to_str.strings = [
+    %output_path_temp, '/mask/clahe_cleaned/'
+]
+mask_clahe_cleaned_kv/list_to_str.separator = ''
+mask_clahe_cleaned/filter_mask.output_spec = {
+    'create': True,
+    'open': True,
+    'driver': %driver,
+    'kvstore': @mask_clahe_cleaned_kv/list_to_str(),
+    'schema': {
+        'chunk_layout': {
+            'read_chunk': { 'shape': [512, 512, 1] },
+            'write_chunk': { 'shape': [512, 512, 1] },
+        },
+        'dimension_units': [[406.0, 'nm'], [406.0, 'nm'], [1000.0, 'nm']],
+        'domain': {
+            'exclusive_max': [[%size_x], [%size_y], [%size_z_anatomy]],
+            'inclusive_min': [0, 0, 0],
+            'labels': ['x', 'y', 'z'],
+        },
+        'dtype': 'uint16',
+    }
+}
+
+
+# ------------------------------------------------------------------------------
+# %output_path_temp/functional/raw_upsampled/
+# ------------------------------------------------------------------------------
+# - Upsample functional data to the anatomy resolution (4x in z-dimension).
+
+functional_raw_upsampled/run.virtual_decorators = [
+    @functional_raw_upsampled/Interpolation(),
+    @functional_raw_upsampled/Write()
+]
+functional_raw_upsampled/run.input_spec = {
+    'open' : True,
+    'driver': %driver,
+    'kvstore': @functional_raw_kv/list_to_str(),
+}
+functional_raw_upsampled/run.extra_flags = %extra_flags_cpu
+
+functional_raw_upsampled/Interpolation.size = (%size_x, %size_y, %size_z_anatomy, %size_t)
+functional_raw_upsampled/Interpolation.order = 1
+
+functional_raw_upsampled_kv/list_to_str.strings = [
+    %output_path_temp, '/functional/raw_upsampled/'
+]
+functional_raw_upsampled_kv/list_to_str.separator = ''
+functional_raw_upsampled/Write.output_spec_overrides = {
+    'create': True,
+    'open' : True,
+    'driver': %driver,
+    'kvstore': @functional_raw_upsampled_kv/list_to_str(),
+    'schema': {
+        'chunk_layout': {
+            'read_chunk': { 'shape': [512, 512, 1, 1] },
+            'write_chunk': { 'shape': [512, 512, 1, 1] },
+        },
+        'dimension_units': ['406 nm', '406 nm', '1000 nm', '0.9141 s'],
+        'codec': %SpecAction.CLOBBER_WITH_INPUT_SPEC,
+    }
+}
+
+
+# ------------------------------------------------------------------------------
+# %output_path_temp/functional/translational/transforms/
+# ------------------------------------------------------------------------------
+# - Fit translational transforms aligning the functional data to the anatomy.
+# - Transforms are estimated individually per timestep.
+
+functional_translational_transforms/run.virtual_decorators = [
+    @functional_translational_transforms/OptimTranslationTransform(),
+    @functional_translational_transforms/Write()
+]
+functional_translational_transforms/run.input_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_raw_upsampled_kv/list_to_str(),
+}
+functional_translational_transforms/run.extra_flags = %extra_flags_cpu
+
+functional_translational_transforms/OptimTranslationTransform.fixed_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @anatomy_clahe_kv/list_to_str(),
+    'transform': {
+         # Repeat along the time axis.
+        'input_inclusive_min': [0, 0, 0, [0]],
+        'input_exclusive_max': [%size_x, %size_y, %size_z_anatomy, [%size_t]],
+        'input_labels': ['x', 'y', 'z', 't'],
+        'output': [
+              {'input_dimension': 0},
+              {'input_dimension': 1},
+              {'input_dimension': 2},
+          ],
+    },
+    'context': {'cache_pool': {'total_bytes_limit': %total_bytes_limit},},
+    'recheck_cached_data': False,
+}
+functional_translational_transforms/OptimTranslationTransform.image_dims = ('x', 'y', 'z')
+functional_translational_transforms/OptimTranslationTransform.normalization = None
+
+functional_translational_transforms_kv/list_to_str.strings = [
+    %output_path_temp, '/functional/translational/transforms/'
+]
+functional_translational_transforms_kv/list_to_str.separator = ''
+functional_translational_transforms/Write.output_spec_overrides = {
+    'create': True,
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_translational_transforms_kv/list_to_str(),
+    'schema': {
+        'chunk_layout': {'inner_order': [2, 1, 0],},
+    },
+}
+
+
+# ------------------------------------------------------------------------------
+# %output_path_temp/functional/translational/transforms_filt/
+# ------------------------------------------------------------------------------
+# - Median filter the translational transforms in time to remove jitter in the
+#   estimated transforms.
+
+functional_translational_transforms_filt/run.virtual_decorators = [
+        @functional_translational_transforms_filt/MedianFilter(),
+        @functional_translational_transforms_filt/Write()
+]
+functional_translational_transforms_filt/run.input_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_translational_transforms_kv/list_to_str(),
+}
+
+functional_translational_transforms_filt/MedianFilter.size = [1, 1, 128]
+functional_translational_transforms_filt/MedianFilter.min_chunksize = [3, 4, %size_t]
+
+functional_translational_transforms_filt_kv/list_to_str.strings = [
+    %output_path_temp, '/functional/translational/transforms_filt',
+]
+functional_translational_transforms_filt_kv/list_to_str.separator = ''
+functional_translational_transforms_filt/Write.output_spec_overrides = {
+    'create': True,
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_translational_transforms_filt_kv/list_to_str(),
+}
+
+
+# ------------------------------------------------------------------------------
+# %output_path_temp/functional/translational/warped/
+# ------------------------------------------------------------------------------
+# - Warp the functional data using the translational transforms.
+
+functional_translational_warped/run.virtual_decorators = [
+    @functional_translational_warped/WarpAffine(),
+    @functional_translational_warped/Write()
+]
+functional_translational_warped/run.input_spec = {
+    'open': True,
+    'driver': %driver,
+    'kvstore': @functional_raw_upsampled_kv/list_to_str(),
+}
+functional_translational_warped/run.extra_flags = %extra_flags_cpu
+
+functional_translational_warped/WarpAffine.context_spec = None
+functional_translational_warped/WarpAffine.image_dims = ('x', 'y', 'z')
+functional_translational_warped/WarpAffine.order = 3
+functional_translational_warped/WarpAffine.transform_spec = {
+    'open': True,
+    'driver': %driver,
+    'kvstore': @functional_translational_transforms_filt_kv/list_to_str(),
+}
+functional_translational_warped/WarpAffine.implementation = 'scipy'
+
+functional_translational_warped_kv/list_to_str.strings = [
+    %output_path_temp, '/functional/translational/warped/'
+]
+functional_translational_warped_kv/list_to_str.separator = ''
+functional_translational_warped/Write.context_spec = None
+functional_translational_warped/Write.output_spec_overrides = {
+    'create': True,
+    'driver': %driver,
+    'kvstore': @functional_translational_warped_kv/list_to_str(),
+    'schema': {
+        'chunk_layout': {
+            'inner_order': [3, 2, 1, 0],
+            'read_chunk': { 'shape': [%size_x, %size_y, 1, 1] },
+            'write_chunk': { 'shape': [%size_x, %size_y, 1, 1] },
+        },
+    }
+}
+
+
+# ------------------------------------------------------------------------------
+# %output_path_temp/functional/translational/map/
+# ------------------------------------------------------------------------------
+# - Create transform map from the translational transforms; for later use.
+
+functional_translational_map/run.virtual_decorators = [
+    @functional_translational_map/MultiplyPointwise(),
+    @functional_translational_map/MakeAffineCoordMap(),
+    @functional_translational_map/Write()
+]
+functional_translational_map/run.input_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_translational_transforms_filt_kv/list_to_str(),
+}
+
+functional_translational_map/MultiplyPointwise.multiply_spec = {
+  'open': True,
+  'create': True,
+  'driver': 'zarr3',
+  'dtype': 'float32',
+  'kvstore': {'driver': 'memory'},
+  'metadata': {
+    'chunk_grid': {
+      'configuration': {'chunk_shape': [3, 4, %size_t]},
+      'name': 'regular',
+    },
+    'chunk_key_encoding': {'name': 'default'},
+    'codecs': [{'configuration': {'endian': 'little'}, 'name': 'bytes'}],
+    'data_type': 'float32',
+    'fill_value': -1.0,
+    'node_type': 'array',
+    'shape': [3, 4, %size_t],
+    'zarr_format': 3,
+  },
+}
+
+functional_translational_map/MakeAffineCoordMap.size = (
+    2, 2, 2
+)
+
+functional_translational_map_kv/list_to_str.strings = [
+    %output_path_temp, '/functional/translational/map',
+]
+functional_translational_map_kv/list_to_str.separator = ''
+functional_translational_map/Write.output_spec_overrides = {
+    'create': True,
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_translational_map_kv/list_to_str(),
+}
+
+
+# ------------------------------------------------------------------------------
+# %output_path_temp/mask/boundary/
+# ------------------------------------------------------------------------------
+# - Generate a boundary mask for the functional data.
+# - Contains 0 for voxels close to the upper and lower bounds of the volume in
+#   any dimension, and 1 otherwise.
+
+mask_boundary/write_boundary_mask_to_tensorstore.shape = (%size_x, %size_y, %size_z_anatomy)
+mask_boundary/write_boundary_mask_to_tensorstore.before_xyz = (12, 12, 12)
+mask_boundary/write_boundary_mask_to_tensorstore.after_xyz = (12, 12, 12)
+
+mask_boundary_kv/list_to_str.strings = [
+    %output_path_temp, '/mask/boundary/'
+]
+mask_boundary_kv/list_to_str.separator = ''
+mask_boundary/write_boundary_mask_to_tensorstore.output_spec = {
+    'create': True,
+    'open': True,
+    'driver': %driver,
+    'kvstore': @mask_boundary_kv/list_to_str(),
+    'schema': {
+        'chunk_layout': {
+            'read_chunk': { 'shape': [512, 512, 1] },
+            'write_chunk': { 'shape': [512, 512, 1] },
+        },
+        'dimension_units': [[406.0, 'nm'], [406.0, 'nm'], [1000.0, 'nm']],
+        'domain': {
+            'exclusive_max': [[%size_x], [%size_y], [%size_z_anatomy]],
+            'inclusive_min': [0, 0, 0],
+            'labels': ['x', 'y', 'z'],
+        },
+        'dtype': 'uint16',
+    }
+}
+
+
+# ------------------------------------------------------------------------------
+# %output_path_temp/functional/elastic_1/flows/
+# ------------------------------------------------------------------------------
+# - First round of elastic alignment: Compute flow field aligning
+#   translationally pre-aligned functional data to the anatomy volume.
+
+functional_elastic_1_flows/run.virtual_decorators = [
+    @functional_elastic_1_flows/OptimFlow(),
+    @functional_elastic_1_flows/Write()
+]
+functional_elastic_1_flows/run.input_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_translational_warped_kv/list_to_str(),
+}
+functional_elastic_1_flows/run.extra_flags = %extra_flags_gpu
+
+# Patch sizes
+functional_elastic_1_flows_px = 128
+functional_elastic_1_flows_py = 128
+functional_elastic_1_flows_pz = 64
+
+# Step sizes
+functional_elastic_1_flows_sx = 32
+functional_elastic_1_flows_sy = 32
+functional_elastic_1_flows_sz = 16
+
+functional_elastic_1_flows/OptimFlow.fixed_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @anatomy_clahe_kv/list_to_str(),
+    'transform': {
+        # Repeat along the time axis.
+        'input_exclusive_max': [[%size_x], [%size_y], %size_z_anatomy, [%size_t]],
+        'input_inclusive_min': [0, 0, 0, [0]],
+        'input_labels': ['x', 'y', 'z', 't'],
+        'output': [
+            {'input_dimension': 0},
+            {'input_dimension': 1},
+            {'input_dimension': 2},
+        ],
+    },
+    'context': {'cache_pool': {'total_bytes_limit': %total_bytes_limit},},
+    'recheck_cached_data': False,
+}
+functional_elastic_1_flows/OptimFlow.fixed_mask_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @mask_clahe_cleaned_kv/list_to_str(),
+    'transform': {
+        # Repeat along the time axis.
+        'input_exclusive_max': [[%size_x], [%size_y], %size_z_anatomy, [%size_t]],
+        'input_inclusive_min': [0, 0, 0, [0]],
+        'input_labels': ['x', 'y', 'z', 't'],
+        'output': [
+            {'input_dimension': 0},
+            {'input_dimension': 1},
+            {'input_dimension': 2},
+        ],
+    },
+    'context': {'cache_pool': {'total_bytes_limit': %total_bytes_limit},},
+    'recheck_cached_data': False,
+}
+functional_elastic_1_flows/OptimFlow.input_mask_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @mask_boundary_kv/list_to_str(),
+    'transform': {
+        # Repeat along the time axis.
+        'input_exclusive_max': [[%size_x], [%size_y], %size_z_anatomy, [%size_t]],
+        'input_inclusive_min': [0, 0, 0, [0]],
+        'input_labels': ['x', 'y', 'z', 't'],
+        'output': [
+            {'input_dimension': 0},
+            {'input_dimension': 1},
+            {'input_dimension': 2},
+        ],
+    },
+    'context': {'cache_pool': {'total_bytes_limit': %total_bytes_limit},},
+    'recheck_cached_data': False,
+}
+functional_elastic_1_flows/OptimFlow.image_dims = ('x', 'y', 'z')
+functional_elastic_1_flows/OptimFlow.patch_size = (
+        %functional_elastic_1_flows_px,
+        %functional_elastic_1_flows_py,
+        %functional_elastic_1_flows_pz)
+functional_elastic_1_flows/OptimFlow.step_size = (
+        %functional_elastic_1_flows_sx,
+        %functional_elastic_1_flows_sy,
+        %functional_elastic_1_flows_sz)
+functional_elastic_1_flows/OptimFlow.batch_size = 1
+functional_elastic_1_flows/OptimFlow.invert_masks = True
+
+functional_elastic_1_flows_kv/list_to_str.strings = [
+    %output_path_temp, '/functional/elastic_1/flows',
+]
+functional_elastic_1_flows_kv/list_to_str.separator = ''
+functional_elastic_1_flows/Write.output_spec_overrides = {
+    'create': True,
+    'open' : True,
+    'driver' : %driver,
+    'kvstore' : @functional_elastic_1_flows_kv/list_to_str(),
+    'schema': {'chunk_layout': {'inner_order': [4, 3, 2, 1, 0],},}
+}
+functional_elastic_1_flows/Write.keep_existing_chunks = False
+
+
+# ------------------------------------------------------------------------------
+# %output_path_temp/functional/elastic_1/flows_cleaned/
+# ------------------------------------------------------------------------------
+# - First round of elastic alignment: Clean flow fields.
+
+functional_elastic_1_flows_cleaned/run.virtual_decorators = [
+    @functional_elastic_1_flows_cleaned/CleanFlowFilter(),
+    #@functional_elastic_1_flows_cleaned/ReconcileFlowFilter(),
+    @functional_elastic_1_flows_cleaned/Write()
+]
+functional_elastic_1_flows_cleaned/run.input_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_elastic_1_flows_kv/list_to_str(),
+}
+functional_elastic_1_flows_cleaned/run.extra_flags = %extra_flags_cpu
+
+# https://github.com/google-research/sofima/blob/main/flow_utils.py#L44-L51
+functional_elastic_1_flows_cleaned/CleanFlowFilter.min_peak_sharpness = 1.
+functional_elastic_1_flows_cleaned/CleanFlowFilter.min_peak_ratio = 0.
+# Maximum expected movement:
+functional_elastic_1_flows_cleaned/CleanFlowFilter.max_magnitude = 20
+functional_elastic_1_flows_cleaned/CleanFlowFilter.max_deviation = 10
+
+# https://github.com/google-research/sofima/blob/main/flow_utils.py#L89-L96
+#functional_elastic_1_flows_cleaned/ReconcileFlowFilter.max_gradient = 2.0
+#functional_elastic_1_flows_cleaned/ReconcileFlowFilter.max_deviation = 2
+#functional_elastic_1_flows_cleaned/ReconcileFlowFilter.min_patch_size = 20
+
+# Output path
+functional_elastic_1_flows_cleaned_kv/list_to_str.strings = [
+    %output_path_temp, '/functional/elastic_1/flows_cleaned',
+]
+functional_elastic_1_flows_cleaned_kv/list_to_str.separator = ''
+
+functional_elastic_1_flows_cleaned/Write.output_spec_overrides = {
+    'create': True,
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_elastic_1_flows_cleaned_kv/list_to_str(),
+}
+
+
+# ------------------------------------------------------------------------------
+# %output_path_temp/functional/elastic_1/mesh/
+# ------------------------------------------------------------------------------
+# - First round of elastic alignment: Mesh relaxation.
+
+functional_elastic_1_mesh/run.virtual_decorators = [
+    @functional_elastic_1_mesh/MeshRelaxFlowFilter(),
+    @functional_elastic_1_mesh/Write()
+]
+functional_elastic_1_mesh/run.input_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_elastic_1_flows_cleaned_kv/list_to_str(),
+}
+functional_elastic_1_mesh/run.extra_flags = %extra_flags_cpu
+
+# https://github.com/google-research/sofima/blob/main/mesh.py#L252-L300
+# Spring constant for inter-section springs for mesh simulation:
+functional_elastic_1_mesh/MeshRelaxFlowFilter.k0 = 0.05
+# Spring constant for intra-section springs for mesh simulation:
+functional_elastic_1_mesh/MeshRelaxFlowFilter.k = 0.1
+functional_elastic_1_mesh/MeshRelaxFlowFilter.dt = 0.001
+# Damping constant for mesh simulation:
+functional_elastic_1_mesh/MeshRelaxFlowFilter.gamma = 0.0
+functional_elastic_1_mesh/MeshRelaxFlowFilter.stride = (
+    %functional_elastic_1_flows_sx,
+    %functional_elastic_1_flows_sy,
+    %functional_elastic_1_flows_sz)
+functional_elastic_1_mesh/MeshRelaxFlowFilter.num_iters = 1000
+functional_elastic_1_mesh/MeshRelaxFlowFilter.max_iters = 50_000
+functional_elastic_1_mesh/MeshRelaxFlowFilter.stop_v_max = 0.001
+functional_elastic_1_mesh/MeshRelaxFlowFilter.dt_max = 1000
+
+# Output path
+functional_elastic_1_mesh_kv/list_to_str.strings = [
+    %output_path_temp, '/functional/elastic_1/mesh',
+]
+functional_elastic_1_mesh_kv/list_to_str.separator = ''
+
+functional_elastic_1_mesh/Write.output_spec_overrides = {
+    'create': True,
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_elastic_1_mesh_kv/list_to_str(),
+}
+
+
+# ------------------------------------------------------------------------------
+# %output_path_temp/functional/align/elastic_1/warped/
+# ------------------------------------------------------------------------------
+# - First round of elastic alignment: Warp volume.
+
+functional_elastic_1_warped/run.virtual_decorators = [
+    @functional_elastic_1_warped/WarpCoordMap(),
+    @functional_elastic_1_warped/Write()
+]
+functional_elastic_1_warped/run.input_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_translational_warped_kv/list_to_str(),
+}
+functional_elastic_1_warped/run.extra_flags = %extra_flags_cpu
+
+functional_elastic_1_warped/WarpCoordMap.coord_map_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_elastic_1_mesh_kv/list_to_str(),
+}
+functional_elastic_1_warped/WarpCoordMap.image_dims = ('x', 'y', 'z')
+functional_elastic_1_warped/WarpCoordMap.work_size = (512, 512, 8)
+functional_elastic_1_warped/WarpCoordMap.parallelism = 12
+functional_elastic_1_warped/WarpCoordMap.stride = (
+    %functional_elastic_1_flows_sz,
+    %functional_elastic_1_flows_sy,
+    %functional_elastic_1_flows_sx)
+functional_elastic_1_warped/WarpCoordMap.order = 1
+functional_elastic_1_warped/WarpCoordMap.overlap = (0, 0, 0)
+
+functional_elastic_1_warped_kv/list_to_str.strings = [
+    %output_path_temp, '/functional/elastic_1/warped',
+]
+functional_elastic_1_warped_kv/list_to_str.separator = ''
+functional_elastic_1_warped/Write.output_spec_overrides = {
+  'create': True,
+  'open' : True,
+  'driver' : %driver,
+  'kvstore': @functional_elastic_1_warped_kv/list_to_str(),
+  'schema': {
+    'chunk_layout': {
+      'read_chunk': { 'shape': [512, 512, 1, 1] },
+      'write_chunk': { 'shape': [512, 512, 1, 1] },
+      'inner_order': [3, 2, 1, 0],
+    },
+  }
+}
+
+
+# ------------------------------------------------------------------------------
+# %output_path_temp/functional/elastic_1/map/
+# ------------------------------------------------------------------------------
+# - Create transform map from the elastic transforms; for later use.
+
+functional_elastic_1_map/run.virtual_decorators = [
+    @functional_elastic_1_map/ComposeCoordMaps(),
+    @functional_elastic_1_map/Write()
+]
+functional_elastic_1_map/run.input_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_elastic_1_mesh_kv/list_to_str(),
+}
+
+functional_elastic_1_map/ComposeCoordMaps.coord_map_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_translational_map_kv/list_to_str(),
+}
+functional_elastic_1_map/ComposeCoordMaps.start1 = (0., 0., 0.)
+functional_elastic_1_map/ComposeCoordMaps.start2 = (0., 0., 0.)
+functional_elastic_1_map/ComposeCoordMaps.stride1 = (
+    %functional_elastic_1_flows_sz,
+    %functional_elastic_1_flows_sy,
+    %functional_elastic_1_flows_sx
+)
+functional_elastic_1_map/ComposeCoordMaps.stride2 = (
+    %size_z_anatomy,
+    %size_y,
+    %size_x
+)
+
+functional_elastic_1_map_kv/list_to_str.strings = [
+    %output_path_temp, '/functional/elastic_1/map',
+]
+functional_elastic_1_map_kv/list_to_str.separator = ''
+functional_elastic_1_map/Write.output_spec_overrides = {
+    'create': True,
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_elastic_1_map_kv/list_to_str(),
+}
+
+
+# ------------------------------------------------------------------------------
+# %output_path_temp/functional/elastic_2/flows/
+# ------------------------------------------------------------------------------
+# - Second round of elastic alignment: Compute flow fields.
+
+functional_elastic_2_flows/run.virtual_decorators = [
+    @functional_elastic_2_flows/OptimFlow(),
+    @functional_elastic_2_flows/Write()
+]
+functional_elastic_2_flows/run.input_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_elastic_1_warped_kv/list_to_str(),
+}
+functional_elastic_2_flows/run.extra_flags = %extra_flags_gpu
+
+# Patch sizes
+functional_elastic_2_flows_px = 64
+functional_elastic_2_flows_py = 64
+functional_elastic_2_flows_pz = 32
+
+# Step sizes
+functional_elastic_2_flows_sx = 16
+functional_elastic_2_flows_sy = 16
+functional_elastic_2_flows_sz = 8
+
+functional_elastic_2_flows/OptimFlow.fixed_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @anatomy_clahe_kv/list_to_str(),
+    'transform': {
+        # Repeat along the time axis.
+        'input_exclusive_max': [[%size_x], [%size_y], %size_z_anatomy, [%size_t]],
+        'input_inclusive_min': [0, 0, 0, [0]],
+        'input_labels': ['x', 'y', 'z', 't'],
+        'output': [
+            {'input_dimension': 0},
+            {'input_dimension': 1},
+            {'input_dimension': 2},
+        ],
+    },
+    'context': {'cache_pool': {'total_bytes_limit': %total_bytes_limit},},
+    'recheck_cached_data': False,
+}
+functional_elastic_2_flows/OptimFlow.fixed_mask_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @mask_clahe_cleaned_kv/list_to_str(),
+    'transform': {
+        # Repeat along the time axis.
+        'input_exclusive_max': [[%size_x], [%size_y], %size_z_anatomy, [%size_t]],
+        'input_inclusive_min': [0, 0, 0, [0]],
+        'input_labels': ['x', 'y', 'z', 't'],
+        'output': [
+            {'input_dimension': 0},
+            {'input_dimension': 1},
+            {'input_dimension': 2},
+        ],
+    },
+    'context': {'cache_pool': {'total_bytes_limit': %total_bytes_limit},},
+    'recheck_cached_data': False,
+}
+functional_elastic_2_flows/OptimFlow.input_mask_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @mask_boundary_kv/list_to_str(),
+    'transform': {
+        # Repeat along the time axis.
+        'input_exclusive_max': [[%size_x], [%size_y], %size_z_anatomy, [%size_t]],
+        'input_inclusive_min': [0, 0, 0, [0]],
+        'input_labels': ['x', 'y', 'z', 't'],
+        'output': [
+            {'input_dimension': 0},
+            {'input_dimension': 1},
+            {'input_dimension': 2},
+        ],
+    },
+    'context': {'cache_pool': {'total_bytes_limit': %total_bytes_limit},},
+    'recheck_cached_data': False,
+}
+functional_elastic_2_flows/OptimFlow.image_dims = ('x', 'y', 'z')
+functional_elastic_2_flows/OptimFlow.patch_size = (
+        %functional_elastic_2_flows_px,
+        %functional_elastic_2_flows_py,
+        %functional_elastic_2_flows_pz)
+functional_elastic_2_flows/OptimFlow.step_size = (
+        %functional_elastic_2_flows_sx,
+        %functional_elastic_2_flows_sy,
+        %functional_elastic_2_flows_sz)
+functional_elastic_2_flows/OptimFlow.batch_size = 1
+functional_elastic_2_flows/OptimFlow.invert_masks = True
+
+functional_elastic_2_flows_kv/list_to_str.strings = [
+    %output_path_temp, '/functional/elastic_2/flows',
+]
+functional_elastic_2_flows_kv/list_to_str.separator = ''
+functional_elastic_2_flows/Write.output_spec_overrides = {
+    'create': True,
+    'open' : True,
+    'driver' : %driver,
+    'kvstore' : @functional_elastic_2_flows_kv/list_to_str(),
+    'schema': {'chunk_layout': {'inner_order': [4, 3, 2, 1, 0],},}
+}
+functional_elastic_2_flows/Write.keep_existing_chunks = False
+
+
+# ------------------------------------------------------------------------------
+# %output_path_temp/functional/elastic_2/flows_cleaned/
+# ------------------------------------------------------------------------------
+# - Second round of elastic alignment: Clean flow fields.
+
+functional_elastic_2_flows_cleaned/run.virtual_decorators = [
+    @functional_elastic_2_flows_cleaned/CleanFlowFilter(),
+    #@functional_elastic_2_flows_cleaned/ReconcileFlowFilter(),
+    @functional_elastic_2_flows_cleaned/Write()
+]
+functional_elastic_2_flows_cleaned/run.input_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_elastic_2_flows_kv/list_to_str(),
+}
+functional_elastic_2_flows_cleaned/run.extra_flags = %extra_flags_cpu
+
+# https://github.com/google-research/sofima/blob/main/flow_utils.py#L44-L51
+functional_elastic_2_flows_cleaned/CleanFlowFilter.min_peak_sharpness = 1.
+functional_elastic_2_flows_cleaned/CleanFlowFilter.min_peak_ratio = 0.
+# Maximum expected movement:
+functional_elastic_2_flows_cleaned/CleanFlowFilter.max_magnitude = 20
+functional_elastic_2_flows_cleaned/CleanFlowFilter.max_deviation = 10
+
+# https://github.com/google-research/sofima/blob/main/flow_utils.py#L89-L96
+#functional_elastic_2_flows_cleaned/ReconcileFlowFilter.max_gradient = 2.0
+#functional_elastic_2_flows_cleaned/ReconcileFlowFilter.max_deviation = 2
+#functional_elastic_2_flows_cleaned/ReconcileFlowFilter.min_patch_size = 20
+
+# Output path
+functional_elastic_2_flows_cleaned_kv/list_to_str.strings = [
+    %output_path_temp, '/functional/elastic_2/flows_cleaned',
+]
+functional_elastic_2_flows_cleaned_kv/list_to_str.separator = ''
+
+functional_elastic_2_flows_cleaned/Write.output_spec_overrides = {
+    'create': True,
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_elastic_2_flows_cleaned_kv/list_to_str(),
+}
+
+
+# ------------------------------------------------------------------------------
+# %output_path_temp/functional/elastic_2/mesh/
+# ------------------------------------------------------------------------------
+# - Second round of elastic alignment: Mesh relaxation.
+
+functional_elastic_2_mesh/run.virtual_decorators = [
+    @functional_elastic_2_mesh/MeshRelaxFlowFilter(),
+    @functional_elastic_2_mesh/Write()
+]
+functional_elastic_2_mesh/run.input_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_elastic_2_flows_cleaned_kv/list_to_str(),
+}
+functional_elastic_2_mesh/run.extra_flags = %extra_flags_cpu
+
+# https://github.com/google-research/sofima/blob/main/mesh.py#L252-L300
+# Spring constant for inter-section springs for mesh simulation:
+functional_elastic_2_mesh/MeshRelaxFlowFilter.k0 = 0.05
+# Spring constant for intra-section springs for mesh simulation:
+functional_elastic_2_mesh/MeshRelaxFlowFilter.k = 0.1
+functional_elastic_2_mesh/MeshRelaxFlowFilter.dt = 0.001
+# Damping constant for mesh simulation:
+functional_elastic_2_mesh/MeshRelaxFlowFilter.gamma = 0.0
+functional_elastic_2_mesh/MeshRelaxFlowFilter.stride = (
+    %functional_elastic_2_flows_sx,
+    %functional_elastic_2_flows_sy,
+    %functional_elastic_2_flows_sz)
+functional_elastic_2_mesh/MeshRelaxFlowFilter.num_iters = 1000
+functional_elastic_2_mesh/MeshRelaxFlowFilter.max_iters = 50_000
+functional_elastic_2_mesh/MeshRelaxFlowFilter.stop_v_max = 0.001
+functional_elastic_2_mesh/MeshRelaxFlowFilter.dt_max = 1000
+
+# Output path
+functional_elastic_2_mesh_kv/list_to_str.strings = [
+    %output_path_temp, '/functional/elastic_2/mesh',
+]
+functional_elastic_2_mesh_kv/list_to_str.separator = ''
+
+functional_elastic_2_mesh/Write.output_spec_overrides = {
+    'create': True,
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_elastic_2_mesh_kv/list_to_str(),
+}
+
+
+# ------------------------------------------------------------------------------
+# %output_path_temp/functional/align/elastic_2/warped/
+# ------------------------------------------------------------------------------
+# - Second round of elastic alignment: Warp volume.
+
+functional_elastic_2_warped/run.virtual_decorators = [
+    @functional_elastic_2_warped/WarpCoordMap(),
+    @functional_elastic_2_warped/Write()
+]
+functional_elastic_2_warped/run.input_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_elastic_1_warped_kv/list_to_str(),
+}
+functional_elastic_2_warped/run.extra_flags = %extra_flags_cpu
+
+functional_elastic_2_warped/WarpCoordMap.coord_map_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_elastic_2_mesh_kv/list_to_str(),
+}
+functional_elastic_2_warped/WarpCoordMap.image_dims = ('x', 'y', 'z')
+functional_elastic_2_warped/WarpCoordMap.work_size = (512, 512, 8)
+functional_elastic_2_warped/WarpCoordMap.parallelism = 12
+functional_elastic_2_warped/WarpCoordMap.stride = (
+    %functional_elastic_2_flows_sz,
+    %functional_elastic_2_flows_sy,
+    %functional_elastic_2_flows_sx)
+functional_elastic_2_warped/WarpCoordMap.order = 1
+functional_elastic_2_warped/WarpCoordMap.overlap = (0, 0, 0)
+
+functional_elastic_2_warped_kv/list_to_str.strings = [
+    %output_path_temp, '/functional/elastic_2/warped',
+]
+functional_elastic_2_warped_kv/list_to_str.separator = ''
+functional_elastic_2_warped/Write.output_spec_overrides = {
+  'create': True,
+  'open' : True,
+  'driver' : %driver,
+  'kvstore': @functional_elastic_2_warped_kv/list_to_str(),
+  'schema': {
+    'chunk_layout': {
+      'read_chunk': { 'shape': [512, 512, 1, 1] },
+      'write_chunk': { 'shape': [512, 512, 1, 1] },
+      'inner_order': [3, 2, 1, 0],
+    },
+  }
+}
+
+
+# ------------------------------------------------------------------------------
+# %output_path_temp/functional/elastic_2/map/
+# ------------------------------------------------------------------------------
+# - Create transform map from the elastic transforms; for later use.
+
+functional_elastic_2_map/run.virtual_decorators = [
+    @functional_elastic_2_map/ComposeCoordMaps(),
+    @functional_elastic_2_map/Write()
+]
+functional_elastic_2_map/run.input_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_elastic_2_mesh_kv/list_to_str(),
+}
+
+functional_elastic_2_map/ComposeCoordMaps.coord_map_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_elastic_1_map_kv/list_to_str(),
+}
+functional_elastic_2_map/ComposeCoordMaps.start1 = (0., 0., 0.)
+functional_elastic_2_map/ComposeCoordMaps.start2 = (0., 0., 0.)
+functional_elastic_2_map/ComposeCoordMaps.stride1 = (
+    %functional_elastic_2_flows_sz,
+    %functional_elastic_2_flows_sy,
+    %functional_elastic_2_flows_sx
+)
+functional_elastic_2_map/ComposeCoordMaps.stride2 = (
+    %functional_elastic_1_flows_sz,
+    %functional_elastic_1_flows_sy,
+    %functional_elastic_1_flows_sx
+)
+
+functional_elastic_2_map_kv/list_to_str.strings = [
+    %output_path_temp, '/functional/elastic_2/map',
+]
+functional_elastic_2_map_kv/list_to_str.separator = ''
+functional_elastic_2_map/Write.output_spec_overrides = {
+    'create': True,
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_elastic_2_map_kv/list_to_str(),
+}
+
+
+# ------------------------------------------------------------------------------
+# %output_path_temp/functional/aligned/map_filt/
+# ------------------------------------------------------------------------------
+# - Filter the elastic transform map.
+
+functional_aligned_map_filt/run.virtual_decorators = [
+    @functional_aligned_map_filt/MedianFilter(),
+    @functional_aligned_map_filt/Write()
+]
+functional_aligned_map_filt/run.input_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_elastic_2_map_kv/list_to_str(),
+}
+
+functional_aligned_map_filt/MedianFilter.size = [1, 1, 1, 1, 9]  # fc, fz, fy, fx, t
+functional_aligned_map_filt/MedianFilter.min_chunksize = [1, 1, 1, 1, 9]
+functional_aligned_map_filt/MedianFilter.overlap_width = [(0, 0), (0, 0), (0, 0), (0, 0), (4, 4)]
+
+functional_aligned_map_filt_kv/list_to_str.strings = [
+    %output_path_temp, '/functional/aligned/map_filt',
+]
+functional_aligned_map_filt_kv/list_to_str.separator = ''
+functional_aligned_map_filt/Write.output_spec_overrides = {
+    'create': True,
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_aligned_map_filt_kv/list_to_str(),
+}
+
+
+#-------------------------------------------------------------------------------
+# %output_path/functional/aligned/warped_raw/
+# ------------------------------------------------------------------------------
+# - Warp the raw volume with the filtered elastic transform map.
+
+functional_aligned_raw_warped/run.virtual_decorators = [
+    @functional_aligned_raw_warped/WarpCoordMap(),
+    @functional_aligned_raw_warped/Write()
+]
+functional_aligned_raw_warped/run.input_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_raw_kv/list_to_str(),
+}
+functional_aligned_raw_warped/run.extra_flags = %extra_flags_cpu
+
+functional_aligned_raw_warped/WarpCoordMap.coord_map_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_aligned_map_filt_kv/list_to_str(),
+}
+functional_aligned_raw_warped/WarpCoordMap.image_dims = ('x', 'y', 'z')
+functional_aligned_raw_warped/WarpCoordMap.work_size = (512, 512, 8)
+functional_aligned_raw_warped/WarpCoordMap.parallelism = 12
+functional_aligned_raw_warped/WarpCoordMap.stride = (
+    2,  # TODO(jan-matthis): Consider macro for functional_elastic_2_flows_sz/4
+    %functional_elastic_2_flows_sy,
+    %functional_elastic_2_flows_sx)
+functional_aligned_raw_warped/WarpCoordMap.order = 3
+functional_aligned_raw_warped/WarpCoordMap.overlap = (0, 0, 0)
+functional_aligned_raw_warped/WarpCoordMap.mode = 'constant'
+functional_aligned_raw_warped/WarpCoordMap.cval = 100
+functional_aligned_raw_warped/WarpCoordMap.scale_xyz = (1., 1., 0.25)
+
+functional_aligned_raw_warped_kv/list_to_str.strings = [
+    %output_path, '/functional/aligned/warped_raw',
+]
+functional_aligned_raw_warped_kv/list_to_str.separator = ''
+functional_aligned_raw_warped/Write.output_spec_overrides = {
+    'create': True,
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_aligned_raw_warped_kv/list_to_str(),
+    'schema': {
+        'chunk_layout': {
+            'read_chunk': { 'shape': [512, 512, 1, 1] },
+            'write_chunk': { 'shape': [512, 512, 1, 1] },
+            'inner_order': [3, 2, 1, 0],
+        },
+    }
+}
+
+
+# ------------------------------------------------------------------------------
+# %output_path/functional/aligned/warped_raw_xt/
+# ------------------------------------------------------------------------------
+# - Reshard the warped volume to XT chunks.
+
+functional_aligned_raw_warped_xt/reshard_tensor_xy2xt.input_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_aligned_raw_warped_kv/list_to_str(),
+}
+functional_aligned_raw_warped_xt/reshard_tensor_xy2xt.pipeline_options = %runner
+
+functional_aligned_raw_warped_xt/reshard_tensor_xy2xt.dx = 512
+
+functional_aligned_raw_warped_xt_kv/list_to_str.strings = [
+    %output_path, '/functional/aligned/warped_raw_xt',
+]
+functional_aligned_raw_warped_xt_kv/list_to_str.separator = ''
+functional_aligned_raw_warped_xt/reshard_tensor_xy2xt.output_spec = {
+    'create': True,
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_aligned_raw_warped_xt_kv/list_to_str(),
+    'schema': {
+        'chunk_layout': {
+            'read_chunk': { 'shape': [256, 1, 1, 1024] },
+            'write_chunk': { 'shape': [256, 1, 1, 1024] },
+        },
+        'dimension_units': [[406.0, 'nm'], [406.0, 'nm'], [4000.0, 'nm'], [0.9141, 's']],
+        'domain': {
+            'exclusive_max': [[%size_x], [%size_y], [%size_z_functional], [%size_t]],
+            'inclusive_min': [0, 0, 0, 0],
+            'labels': ['x', 'y', 'z', 't'],
+        },
+        'dtype': 'uint16',
+    }
+}
+
+
+# ------------------------------------------------------------------------------
+# %output_path_temp/functional/aligned_raw/normalized/percentiles_xt/
+# ------------------------------------------------------------------------------
+# - Compute percentiles for df/f baseline.
+
+functional_aligned_raw_normalized_percentiles_xt/compute_percentiles.input_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_aligned_raw_warped_xt_kv/list_to_str(),
+}
+functional_aligned_raw_normalized_percentiles_xt/compute_percentiles.pipeline_options = %runner
+
+functional_aligned_raw_normalized_percentiles_xt/compute_percentiles.radius = 400  # ~6 minutes
+functional_aligned_raw_normalized_percentiles_xt/compute_percentiles.percentiles = [8, 10, 20]
+
+functional_aligned_raw_normalized_percentiles_xt_kv/list_to_str.strings = [
+    %output_path_temp, '/functional/aligned_raw/normalized/percentiles_xt',
+]
+functional_aligned_raw_normalized_percentiles_xt_kv/list_to_str.separator = ''
+functional_aligned_raw_normalized_percentiles_xt/compute_percentiles.output_spec = {
+    'create': True,
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_aligned_raw_normalized_percentiles_xt_kv/list_to_str(),
+    'schema': {
+        'chunk_layout': {
+            'read_chunk': { 'shape': [256, 1, 1, 1024, 1] },
+            'write_chunk': { 'shape': [256, 1, 1, 1024, 1] },
+        },
+        'dimension_units': [[406.0, 'nm'], [406.0, 'nm'], [4000.0, 'nm'], [0.9141, 's'], [1., '']],
+        'domain': {
+            'exclusive_max': [[%size_x], [%size_y], [%size_z_functional], [%size_t], [3]],
+            'inclusive_min': [0, 0, 0, 0, 0],
+            'labels': ['x', 'y', 'z', 't', 'p'],
+        },
+        'dtype': 'uint16',
+    }
+}
+
+
+# ------------------------------------------------------------------------------
+# %output_path_temp/functional/aligned_raw/normalized/percentiles_xy/
+# ------------------------------------------------------------------------------
+# - Reshard the percentiles to XY chunks.
+
+functional_aligned_raw_normalized_percentiles_xy/reshard_tensor_xt2xy.input_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_aligned_raw_normalized_percentiles_xt_kv/list_to_str(),
+    # Pull off first percentile dimension, which is 8th percentile.
+    'transform': {
+        'input_rank': 4,
+        'output': [
+            {'input_dimension': 0},
+            {'input_dimension': 1},
+            {'input_dimension': 2},
+            {'input_dimension': 3},
+            {'offset': 0},
+        ],
+    },
+}
+functional_aligned_raw_normalized_percentiles_xy/reshard_tensor_xt2xy.pipeline_options = %runner
+
+functional_aligned_raw_normalized_percentiles_xy/reshard_tensor_xt2xy.dx = 1024
+
+functional_aligned_raw_normalized_percentiles_xy_kv/list_to_str.strings = [
+    %output_path_temp, '/functional/aligned_raw/normalized/percentiles_xy',
+]
+functional_aligned_raw_normalized_percentiles_xy_kv/list_to_str.separator = ''
+functional_aligned_raw_normalized_percentiles_xy/reshard_tensor_xt2xy.output_spec = {
+    'create': True,
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_aligned_raw_normalized_percentiles_xy_kv/list_to_str(),
+    'schema': {
+        'chunk_layout': {
+            'read_chunk': { 'shape': [512, 512, 1, 1] },
+            'write_chunk': { 'shape': [512, 512, 1, 1] },
+        },
+        'dimension_units': [[406.0, 'nm'], [406.0, 'nm'], [4000.0, 'nm'], [0.9141, 's']],
+        'domain': {
+            'exclusive_max': [[%size_x], [%size_y], [%size_z_functional], [%size_t]],
+            'inclusive_min': [0, 0, 0, 0],
+            'labels': ['x', 'y', 'z', 't'],
+        },
+        'dtype': 'uint16',
+    }
+}
+
+
+# ------------------------------------------------------------------------------
+# %output_path_temp/functional/aligned_raw/normalized/percentiles_xy_filt/
+# ------------------------------------------------------------------------------
+# - Median filter the percentiles.
+
+functional_aligned_raw_normalized_percentiles_xy_filt/run.input_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_aligned_raw_normalized_percentiles_xy_kv/list_to_str(),
+}
+functional_aligned_raw_normalized_percentiles_xy_filt/run.virtual_decorators = [
+    @functional_aligned_raw_normalized_percentiles_xy_filt/MedianFilter(),
+    @functional_aligned_raw_normalized_percentiles_xy_filt/Write()
+]
+
+functional_aligned_raw_normalized_percentiles_xy_filt/MedianFilter.size = [
+    3, 3, 1, 1]
+functional_aligned_raw_normalized_percentiles_xy_filt/MedianFilter.min_chunksize = [
+    %size_x, %size_y, 1, 1]  # Avoid edge effects.
+
+functional_aligned_raw_normalized_percentiles_xy_filt_kv/list_to_str.strings = [
+    %output_path_temp, '/functional/aligned_raw/normalized/percentiles_xy_filt',
+]
+functional_aligned_raw_normalized_percentiles_xy_filt_kv/list_to_str.separator = ''
+functional_aligned_raw_normalized_percentiles_xy_filt/Write.output_spec_overrides = {
+    'create': True,
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_aligned_raw_normalized_percentiles_xy_filt_kv/list_to_str(),
+    'schema': {
+        'chunk_layout': {
+            'read_chunk': { 'shape': [512, 512, 1, 1] },
+            'write_chunk': { 'shape': [512, 512, 1, 1] },
+            'inner_order': [3, 2, 1, 0],
+        },
+    }
+}
+
+
+# ------------------------------------------------------------------------------
+# %output_path_temp/functional/aligned_raw/normalized/df_over_f/
+# ------------------------------------------------------------------------------
+# - Compute df/f normalized volume.
+
+functional_aligned_raw_normalized_df_over_f/run.input_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_aligned_raw_warped_kv/list_to_str(),
+}
+functional_aligned_raw_normalized_df_over_f/run.virtual_decorators = [
+    @functional_aligned_raw_normalized_df_over_f/DfOverF(),
+    @functional_aligned_raw_normalized_df_over_f/Write()
+]
+
+functional_aligned_raw_normalized_df_over_f/DfOverF.baseline = 0.
+functional_aligned_raw_normalized_df_over_f/DfOverF.f0_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_aligned_raw_normalized_percentiles_xy_filt_kv/list_to_str(),
+}
+
+functional_aligned_raw_normalized_df_over_f_kv/list_to_str.strings = [
+    %output_path_temp, '/functional/aligned_raw/normalized/df_over_f',
+]
+functional_aligned_raw_normalized_df_over_f_kv/list_to_str.separator = ''
+functional_aligned_raw_normalized_df_over_f/Write.output_spec_overrides = {
+    'create': True,
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_aligned_raw_normalized_df_over_f_kv/list_to_str(),
+    'schema': {
+        'chunk_layout': {
+            'read_chunk': { 'shape': [512, 512, 1, 1] },
+            'write_chunk': { 'shape': [512, 512, 1, 1] },
+            'inner_order': [3, 2, 1, 0],
+        },
+    }
+}
+
+
+# ------------------------------------------------------------------------------
+# %output_path/functional/aligned_raw/normalized/df_over_f_clipped_multiscale/
+# ------------------------------------------------------------------------------
+# - Apply clipping
+# - Write df/f normalized volume at multiple scales.
+
+functional_aligned_raw_normalized_df_over_f_clipped_multiscale/run.input_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_aligned_raw_normalized_df_over_f_kv/list_to_str(),
+}
+functional_aligned_raw_normalized_df_over_f_clipped_multiscale/run.virtual_decorators = [
+    @functional_aligned_raw_normalized_df_over_f_clipped_multiscale/ClipFilter(),
+    @functional_aligned_raw_normalized_df_over_f_clipped_multiscale/MultiscaleWrite()
+]
+
+functional_aligned_raw_normalized_df_over_f_clipped_multiscale/ClipFilter.a_min = -0.25
+functional_aligned_raw_normalized_df_over_f_clipped_multiscale/ClipFilter.a_max = 1.5
+
+functional_aligned_raw_normalized_df_over_f_clipped_multiscale_kv/list_to_str.strings = [
+    %output_path, '/functional/aligned_raw/normalized/df_over_f_clipped_multiscale',
+]
+functional_aligned_raw_normalized_df_over_f_clipped_multiscale_kv/list_to_str.separator = ''
+# TODO(jan-matthis): Adjust downsampling factors in case raw volume (rather than
+# raw upsampled) is warped above.
+functional_aligned_raw_normalized_df_over_f_clipped_multiscale/MultiscaleWrite.sequential_downsample_factors = [
+    [2, 2, 1, 1], [2, 2, 1, 1]]
+functional_aligned_raw_normalized_df_over_f_clipped_multiscale/MultiscaleWrite.downsample_method = 'mean'
+functional_aligned_raw_normalized_df_over_f_clipped_multiscale/MultiscaleWrite.output_base_spec_overrides = {
+    'create': True,
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_aligned_raw_normalized_df_over_f_clipped_multiscale_kv/list_to_str(),
+    'schema': {
+        'chunk_layout': {
+            'read_chunk': { 'shape': [512, 512, 1, 1] },
+            'write_chunk': { 'shape': [512, 512, 1, 1] },
+            'inner_order': [3, 0, 1, 2],
+        },
+        'codec': {
+            'driver': %driver,
+            'codecs': [{
+                'name': 'blosc',
+                'configuration': {'cname': 'zstd', 'clevel': 4}}],
+        },
+    }
+}
+
+
+# ------------------------------------------------------------------------------
+# %output_path/functional/aligned_raw/normalized/df_over_f_clipped_xt/
+# ------------------------------------------------------------------------------
+# - Reshard the df/f normalized volume to XT chunks.
+
+functional_aligned_raw_normalized_df_over_f_clipped_multiscale_s0_kv/list_to_str.strings = [
+    %output_path, '/functional/aligned_raw/normalized/df_over_f_clipped_multiscale/s0',
+]
+functional_aligned_raw_normalized_df_over_f_clipped_multiscale_s0_kv/list_to_str.separator = ''
+
+functional_aligned_raw_normalized_df_over_f_clipped_xt/reshard_tensor_xy2xt.input_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_aligned_raw_normalized_df_over_f_clipped_multiscale_s0_kv/list_to_str(),
+}
+functional_aligned_raw_normalized_df_over_f_clipped_xt/reshard_tensor_xy2xt.pipeline_options = %runner
+
+functional_aligned_raw_normalized_df_over_f_clipped_xt/reshard_tensor_xy2xt.dx = 512
+
+functional_aligned_raw_normalized_df_over_f_clipped_xt_kv/list_to_str.strings = [
+    %output_path, '/functional/aligned_raw/normalized/df_over_f_clipped_xt',
+]
+functional_aligned_raw_normalized_df_over_f_clipped_xt_kv/list_to_str.separator = ''
+functional_aligned_raw_normalized_df_over_f_clipped_xt/reshard_tensor_xy2xt.output_spec = {
+    'create': True,
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_aligned_raw_normalized_df_over_f_clipped_xt_kv/list_to_str(),
+    'schema': {
+        'chunk_layout': {
+            'read_chunk': { 'shape': [32, 1, 1, %size_t] },
+            'write_chunk': { 'shape': [32, 1, 1, %size_t] },
+        },
+        'dimension_units': [[406.0, 'nm'], [406.0, 'nm'], [4000.0, 'nm'], [0.9141, 's']],
+        'domain': {
+            'exclusive_max': [[%size_x], [%size_y], [%size_z_functional], [%size_t]],
+            'inclusive_min': [0, 0, 0, 0],
+            'labels': ['x', 'y', 'z', 't'],
+        },
+        'dtype': 'float32',
+    }
+}
+
+
+# ------------------------------------------------------------------------------
+# %output_path/functional/aligned_raw/normalized/df_over_f_clipped_xt_s2/
+# ------------------------------------------------------------------------------
+# - Reshard the df/f normalized volume at s2 resolution to XT chunks.
+
+functional_aligned_raw_normalized_df_over_f_clipped_multiscale_s2_kv/list_to_str.strings = [
+    %output_path, '/functional/aligned_raw/normalized/df_over_f_clipped_multiscale/s2',
+]
+functional_aligned_raw_normalized_df_over_f_clipped_multiscale_s2_kv/list_to_str.separator = ''
+
+functional_aligned_raw_normalized_df_over_f_clipped_xt_s2/reshard_tensor_xy2xt.input_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_aligned_raw_normalized_df_over_f_clipped_multiscale_s2_kv/list_to_str(),
+}
+functional_aligned_raw_normalized_df_over_f_clipped_xt_s2/reshard_tensor_xy2xt.pipeline_options = %runner
+
+functional_aligned_raw_normalized_df_over_f_clipped_xt_s2/reshard_tensor_xy2xt.dx = 512
+
+functional_aligned_raw_normalized_df_over_f_clipped_xt_s2_kv/list_to_str.strings = [
+    %output_path, '/functional/aligned_raw/normalized/df_over_f_clipped_xt_s2',
+]
+functional_aligned_raw_normalized_df_over_f_clipped_xt_s2_kv/list_to_str.separator = ''
+functional_aligned_raw_normalized_df_over_f_clipped_xt_s2/reshard_tensor_xy2xt.output_spec = {
+    'create': True,
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_aligned_raw_normalized_df_over_f_clipped_xt_s2_kv/list_to_str(),
+    'schema': {
+        'chunk_layout': {
+            'read_chunk': { 'shape': [32, 1, 1, %size_t] },
+            'write_chunk': { 'shape': [32, 1, 1, %size_t] },
+        },
+        'dimension_units': [[1624.0, 'nm'], [1624.0, 'nm'], [4000.0, 'nm'], [0.9141, 's']],
+        'domain': {
+            'exclusive_max': [[512], [332], [72], [%size_t]],
+            'inclusive_min': [0, 0, 0, 0],
+            'labels': ['x', 'y', 'z', 't'],
+        },
+        'dtype': 'float32',
+    }
+}
+
+
+# ------------------------------------------------------------------------------
+# %output_path/functional/aligned_raw/normalized/df_over_f_clipped_multiscale_zchunked/
+# ------------------------------------------------------------------------------
+# - Write df/f normalized volume at multiple scales with XYZ-chunks.
+
+functional_aligned_raw_normalized_df_over_f_clipped_multiscale_zchunked/run.input_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_aligned_raw_normalized_df_over_f_clipped_multiscale_s0_kv/list_to_str(),
+}
+
+functional_aligned_raw_normalized_df_over_f_clipped_multiscale_zchunked/run.virtual_decorators = [
+    @functional_aligned_raw_normalized_df_over_f_clipped_multiscale_zchunked/MultiscaleWrite()
+]
+
+functional_aligned_raw_normalized_df_over_f_clipped_multiscale_zchunked_kv/list_to_str.strings = [
+    %output_path, '/functional/aligned_raw/normalized/df_over_f_clipped_multiscale_zchunked',
+]
+functional_aligned_raw_normalized_df_over_f_clipped_multiscale_zchunked_kv/list_to_str.separator = ''
+
+functional_aligned_raw_normalized_df_over_f_clipped_multiscale_zchunked/MultiscaleWrite.sequential_downsample_factors = [
+    [2, 2, 1, 1], [2, 2, 1, 1]]
+functional_aligned_raw_normalized_df_over_f_clipped_multiscale_zchunked/MultiscaleWrite.downsample_method = 'mean'
+functional_aligned_raw_normalized_df_over_f_clipped_multiscale_zchunked/MultiscaleWrite.output_base_spec_overrides = {
+    'create': True,
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_aligned_raw_normalized_df_over_f_clipped_multiscale_zchunked_kv/list_to_str(),
+    'schema': {
+        'chunk_layout': {
+            'read_chunk': { 'shape': [512, 512, 72, 1] },
+            'write_chunk': { 'shape': [512, 512, 72, 1] },
+            'inner_order': [3, 0, 1, 2],
+        },
+        'codec': {
+            'driver': %driver,
+            'codecs': [{
+                'name': 'blosc',
+                'configuration': {'cname': 'zstd', 'clevel': 4}}],
+        },
+    }
+}
+
+
+# ------------------------------------------------------------------------------
+# %output_path_temp/functional/aligned_raw/normalized/evoked_baseline_xt/
+# ------------------------------------------------------------------------------
+# - Compute evoked baseline with XT-chunks.
+
+functional_aligned_raw_normalized_evoked_baseline_xt/run.virtual_decorators = [
+    @functional_aligned_raw_normalized_evoked_baseline_xt/AverageEvokedResponseFilter(),
+    @functional_aligned_raw_normalized_evoked_baseline_xt/Write(),
+]
+
+functional_aligned_raw_normalized_evoked_baseline_xt/run.input_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_aligned_raw_normalized_df_over_f_clipped_xt_kv/list_to_str(),
+    'schema': {
+        'chunk_layout': {
+            'read_chunk': { 'shape': [32, 1, 1, %size_t] },
+            'write_chunk': { 'shape': [32, 1, 1, %size_t] },
+        },
+        'dimension_units': [[406.0, 'nm'], [406.0, 'nm'], [4000.0, 'nm'], [0.9141, 's']],
+        'domain': {
+            'exclusive_max': [[%size_x], [%size_y], [%size_z_functional], [%size_t]],
+            'inclusive_min': [0, 0, 0, 0],
+            'labels': ['x', 'y', 'z', 't'],
+        },
+        'dtype': 'float32',
+    }
+}
+functional_aligned_raw_normalized_evoked_baseline_xt/run.extra_flags = %extra_flags_cpu
+functional_aligned_raw_normalized_evoked_baseline_xt/run.max_box_bytes = 10_000_000
+
+functional_aligned_raw_normalized_evoked_baseline_xt/AverageEvokedResponseFilter.min_chunksize = (1, 1, 1, %size_t)
+functional_aligned_raw_normalized_evoked_baseline_xt/AverageEvokedResponseFilter.condition_offsets = [0, 649, 2422, 3078, 3735, 5047, 5638, 6623, 7279, 7879]
+functional_aligned_raw_normalized_evoked_baseline_xt/AverageEvokedResponseFilter.condition_period_offsets = [
+    [58, 66, 66, 65, 66, 66, 65, 66, 66, 65],
+    [591, 591, 591],
+    [65, 66, 66, 65, 66, 65, 66, 66, 65, 66],
+    [131, 132, 131, 131, 132],
+    [262, 263, 262, 263, 262],
+    [197, 197, 197],
+    [],
+    [66, 65, 66, 65, 66, 66, 65, 66, 66, 65],
+    [],
+]
+functional_aligned_raw_normalized_evoked_baseline_xt/AverageEvokedResponseFilter.condition_baselines_exclusive_max =  [-2, -1, -2, -1, -1, -1, None, -2, None]
+functional_aligned_raw_normalized_evoked_baseline_xt/AverageEvokedResponseFilter.axis = 3
+functional_aligned_raw_normalized_evoked_baseline_xt/AverageEvokedResponseFilter.pad_side = 'left'
+functional_aligned_raw_normalized_evoked_baseline_xt/AverageEvokedResponseFilter.return_difference = False
+
+functional_aligned_raw_normalized_evoked_baseline_xt_kv/list_to_str.strings = [
+    %output_path_temp, '/functional/aligned_raw/normalized/evoked_baseline_xt',
+]
+functional_aligned_raw_normalized_evoked_baseline_xt_kv/list_to_str.separator = ''
+
+functional_aligned_raw_normalized_evoked_baseline_xt/Write.output_spec_overrides = {
+    'create': True,
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_aligned_raw_normalized_evoked_baseline_xt_kv/list_to_str(),
+    'schema': {
+        'chunk_layout': {
+            'read_chunk': { 'shape': [32, 1, 1, %size_t] },
+            'write_chunk': { 'shape': [32, 1, 1, %size_t] },
+        },
+    }
+}
+
+# ------------------------------------------------------------------------------
+# %output_path_temp/functional/aligned_raw/normalized/evoked_baseline_xy/
+# ------------------------------------------------------------------------------
+# - Reshard the evoked baseline to XY chunks.
+
+functional_aligned_raw_normalized_evoked_baseline_xy/reshard_tensor_xt2xy.input_spec = {
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_aligned_raw_normalized_evoked_baseline_xt_kv/list_to_str(),
+}
+functional_aligned_raw_normalized_evoked_baseline_xy/reshard_tensor_xt2xy.pipeline_options = %runner
+functional_aligned_raw_normalized_evoked_baseline_xy/reshard_tensor_xt2xy.dx = 1024
+
+functional_aligned_raw_normalized_evoked_baseline_xy_kv/list_to_str.separator = ''
+functional_aligned_raw_normalized_evoked_baseline_xy_kv/list_to_str.strings = [
+    %output_path_temp, '/functional/aligned_raw/normalized/evoked_baseline_xy',
+]
+
+functional_aligned_raw_normalized_evoked_baseline_xy/reshard_tensor_xt2xy.output_spec = {
+    'create': True,
+    'open' : True,
+    'driver' : %driver,
+    'kvstore': @functional_aligned_raw_normalized_evoked_baseline_xy_kv/list_to_str(),
+    'schema': {
+        'chunk_layout': {
+            'read_chunk': { 'shape': [512, 512, 1, 1] },
+            'write_chunk': { 'shape': [512, 512, 1, 1] },
+        },
+        'dimension_units': [[406.0, 'nm'], [406.0, 'nm'], [4000.0, 'nm'], [0.9141, 's']],
+        'domain': {
+            'exclusive_max': [[%size_x], [%size_y], [%size_z_functional], [%size_t]],
+            'inclusive_min': [0, 0, 0, 0],
+            'labels': ['x', 'y', 'z', 't'],
+        },
+        'dtype': 'float32',
+    }
+}

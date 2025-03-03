@@ -161,7 +161,7 @@ class TrainTest(parameterized.TestCase):
 
     checkpoint_dir = os.path.join(self.tmpdir, 'checkpoints')
     self.assertTrue(
-        file.Exists(checkpoint_dir),
+        file.Path(checkpoint_dir).exists(),
         'Checkpoint directory not found: %s' % checkpoint_dir,
     )
 

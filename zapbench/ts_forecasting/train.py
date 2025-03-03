@@ -180,7 +180,7 @@ def train_step(
       loss=loss,
       predictions=predictions,
       targets=batch['timeseries_output'],
-      learning_rate=schedule(train_state.opt_state.count),  # pytype: disable=attribute-error
+      learning_rate=schedule(train_state.step),
   )
   return new_state, metrics_update
 

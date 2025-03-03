@@ -1,0 +1,20 @@
+body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  color: #ffffff;
+  font-family: Monospace;
+  font-size: 14px;
+  text-align: center;
+  font-weight: bold;
+  background-color: #000;
+}
+
+.info {
+  position: absolute;
+  width: 100%;
+  text-align: center;
+  z-index: 100;
+  display: block;
+  font-size: 18px;
+}

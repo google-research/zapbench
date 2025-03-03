@@ -22,7 +22,7 @@ import ml_collections as mlc
 _ARGS = immutabledict.immutabledict({
     'checkpoint_selection': 'best_val_loss',
     'exp_workdir': '',  # Defaults to inference workdir if empty.
-    'infer_save_array': True,
+    'infer_save_array': False,
     'infer_save_json': True,
     # {workdir}, {step} will be replaced if present in `infer_prefix`.
     'infer_prefix': 'file://{workdir}/inference/step/{step}',

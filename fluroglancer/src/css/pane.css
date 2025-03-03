@@ -1,0 +1,16 @@
+#pane {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  opacity: 0.8;
+}
+
+/* Default wrapper view */
+#pane .tp-dfwv {
+  min-width: 260px;
+}
+
+/* Input and monitor view */
+#pane .tp-lblv_v {
+  min-width: 260px;
+}

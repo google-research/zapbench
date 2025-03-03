@@ -94,7 +94,7 @@ def get_segmentation_dataframe(df_name: str) -> pd.DataFrame:
     Dataframe.
   """
   path = constants.SEGMENTATION_DATAFRAMES[df_name]
-  with file.Open(path, 'r') as f:
+  with file.Path(path).open('r') as f:
     df = pd.DataFrame(json.load(f))
   return df.sort_values('label').reset_index(drop=True)
 
@@ -225,10 +225,9 @@ def adjust_spec_for_condition_and_split(
 def get_rastermap_indices(timeseries: str) -> np.ndarray:
   """Gets rastermap indices."""
   return json.loads(
-      file.Open(
+      file.Path(
           constants.RASTERMAP_SORTINGS[timeseries],
-          'r',
-      ).read()
+      ).read_text('rt')
   )
 
 

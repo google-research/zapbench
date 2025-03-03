@@ -2,7 +2,7 @@
 name = "zapbench"
 description = ""
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.12"
 license = {file = "LICENSE"}
 authors = [{name = "ZAPBench authors", email="zapbench@google.com"}]
 classifiers = [  # List of https://pypi.org/classifiers/

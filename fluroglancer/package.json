@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "devDependencies": {
-    "vite": "^6.1.1"
+    "vite": "^6.2.0"
   },
   "dependencies": {
     "@0b5vr/tweakpane-plugin-rotation": "^0.2.0",

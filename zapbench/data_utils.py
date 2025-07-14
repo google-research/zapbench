@@ -25,8 +25,10 @@ import tensorstore as ts
 from zapbench import constants
 
 
-def restrict_specs_to_somas(spec: dict[str, Any], soma_ids: Sequence[int] = tuple()) -> dict[str, Any]:
-  """Updates a spec to restrict it to specific soma IDs."
+def restrict_specs_to_somas(
+    spec: dict[str, Any], soma_ids: Sequence[int] = tuple()
+) -> dict[str, Any]:
+  """Updates a spec to restrict it to specific soma IDs.
 
   Args:
     spec: Spec in dictionary form.
@@ -40,8 +42,8 @@ def restrict_specs_to_somas(spec: dict[str, Any], soma_ids: Sequence[int] = tupl
 
   spec = copy.deepcopy(spec)
   spec['transform']['output'] = [
-    {'input_dimension': 0},
-    {'index_array': [soma_ids]}
+      {'input_dimension': 0},
+      {'index_array': [soma_ids]},
   ]
   spec['transform']['input_exclusive_max'][1] = len(soma_ids)
   return spec

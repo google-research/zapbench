@@ -26,7 +26,7 @@ dependencies = [
   "einops",
   "flax",
   "gin-config",
-  "grain-nightly==0.0.10",
+  "grain",
   "immutabledict",
   "jax",
   "ml-collections",

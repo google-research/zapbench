@@ -78,6 +78,7 @@ def get_infer_sets(
 def get_config(
     timesteps_input: int = constants.MAX_CONTEXT_LENGTH,
     timesteps_output: int = constants.PREDICTION_WINDOW_LENGTH,
+    timesteps_output_offset: int = 0,
     output_head: Optional[str] = None,
     num_classes: int = 1,
     train_conditions: str = config_util.sequence_to_string(
@@ -97,6 +98,7 @@ def get_config(
   Args:
     timesteps_input: Number of input timesteps.
     timesteps_output: Number of output timesteps.
+    timesteps_output_offset: Additional offset for output time series.
     output_head: Explicitly choose output head; automatically selected if None.
     num_classes: Number of classes for categorical output head.
     train_conditions: Conditions used for training, as string separated by '+'.
@@ -120,6 +122,9 @@ def get_config(
   c.num_classes = num_classes
   c.timesteps_input = c.timesteps_input_infer = timesteps_input
   c.timesteps_output = c.timesteps_output_infer = timesteps_output
+  c.timesteps_output_offset = c.timesteps_output_offset_infer = (
+      timesteps_output_offset
+  )
   c.train_conditions = config_util.string_to_sequence(
       train_conditions, separator='+'
   )

@@ -75,6 +75,101 @@ class DataSourceTest(parameterized.TestCase):
     self.assertLen(ds, self.num_timesteps - offset + 1)
 
   @parameterized.parameters(
+      {
+          'timesteps_input': 1,
+          'timesteps_output': 1,
+          'timesteps_output_offset': 0,
+          'sequential': True,
+      },
+      {
+          'timesteps_input': 2,
+          'timesteps_output': 2,
+          'timesteps_output_offset': 1,
+          'sequential': True,
+      },
+      {
+          'timesteps_input': 3,
+          'timesteps_output': 2,
+          'timesteps_output_offset': 2,
+          'sequential': True,
+      },
+      {
+          'timesteps_input': 2,
+          'timesteps_output': 3,
+          'timesteps_output_offset': 3,
+          'sequential': True,
+      },
+      {
+          'timesteps_input': 6,
+          'timesteps_output': 4,
+          'timesteps_output_offset': 4,
+          'sequential': True,
+      },
+      {
+          'timesteps_input': 6,
+          'timesteps_output': 6,
+          'timesteps_output_offset': 5,
+          'sequential': True,
+      },
+      {
+          'timesteps_input': 1,
+          'timesteps_output': 1,
+          'timesteps_output_offset': 0,
+          'sequential': False,
+      },
+      {
+          'timesteps_input': 2,
+          'timesteps_output': 2,
+          'timesteps_output_offset': 1,
+          'sequential': False,
+      },
+      {
+          'timesteps_input': 6,
+          'timesteps_output': 6,
+          'timesteps_output_offset': 2,
+          'sequential': False,
+      },
+  )
+  def test_data_source_shape_with_different_timesteps_and_output_offset(
+      self,
+      timesteps_input: int,
+      timesteps_output: int,
+      timesteps_output_offset: int,
+      sequential: bool,
+  ):
+    ds = data_source.TensorStoreTimeSeries(
+        config=data_source.TensorStoreTimeSeriesConfig(
+            input_spec={
+                'driver': 'array',
+                'dtype': 'float32',
+                'array': (
+                    np.ones((self.num_timesteps, self.num_features)).tolist()
+                ),
+            },
+            timesteps_input=timesteps_input,
+            timesteps_output=timesteps_output,
+            timesteps_output_offset=timesteps_output_offset,
+        ),
+        sequential=sequential,
+    )
+    self.assertEqual(
+        ds[0]['series_input'].shape, (timesteps_input, self.num_features)
+    )
+    self.assertEqual(
+        ds[0]['series_output'].shape, (timesteps_output, self.num_features)
+    )
+    self.assertEqual(ds[0]['series_input'].shape, ds.item_shape['series_input'])
+    self.assertEqual(
+        ds[0]['series_output'].shape, ds.item_shape['series_output']
+    )
+    offset = (
+        (timesteps_input + timesteps_output + timesteps_output_offset)
+        if sequential
+        else (timesteps_input + timesteps_output_offset + 1)
+    )
+    self.assertLen(ds, self.num_timesteps - offset + 1)
+
+  @parameterized.parameters(
       {'timesteps_input': 1, 'timesteps_output': 1, 'sequential': True},
       {'timesteps_input': 2, 'timesteps_output': 2, 'sequential': True},
       {'timesteps_input': 3, 'timesteps_output': 2, 'sequential': True},

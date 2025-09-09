@@ -32,11 +32,13 @@ class TensorStoreTimeSeriesConfig:
     input_spec: Spec for TensorStore with shape TxF (timesteps x features).
     timesteps_input: Number of timesteps for input arrays.
     timesteps_output: Number of timesteps for output arrays.
+    timesteps_output_offset: Additional offset for output time series.
   """
 
   input_spec: dict[str, Any]
   timesteps_input: int
   timesteps_output: int
+  timesteps_output_offset: int = 0
 
 
 class TensorStoreTimeSeries:
@@ -73,6 +75,7 @@ class TensorStoreTimeSeries:
       offset = config.timesteps_input + config.timesteps_output
     else:
       offset = config.timesteps_input + 1
+    offset += config.timesteps_output_offset
     self._len = self.volume.shape[0] - offset + 1
     assert self._len > 0, 'Dataset too small for timestep settings.'
 
@@ -81,6 +84,7 @@ class TensorStoreTimeSeries:
 
     self.t_in = config.timesteps_input
     self.t_out = config.timesteps_output
+    self.t_out_offset = config.timesteps_output_offset
 
     self.config = config
     self.transforms = transforms
@@ -115,9 +119,9 @@ class TensorStoreTimeSeries:
       raise IndexError('Index out of bounds.')
     t_indexer_input = slice(record_key, record_key + self.t_in)
     if self.sequential:
-      out_start = record_key + self.t_in
+      out_start = record_key + self.t_in + self.t_out_offset
     else:
-      out_start = record_key + 1
+      out_start = record_key + 1 + self.t_out_offset
     t_indexer_output = slice(out_start, out_start + self.t_out)
     if not self.prefetch:
       input_array = self.volume[t_indexer_input, self.n_indexer].read().result()

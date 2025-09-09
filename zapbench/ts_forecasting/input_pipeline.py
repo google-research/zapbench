@@ -35,6 +35,7 @@ def _build_merged_data_source(
     prefetch: bool,
     transforms: Sequence[grain.MapTransform] = (),
     sequential: bool = True,
+    timesteps_output_offset: int = 0,
 ) -> data_source.MergedTensorStoreTimeSeries:
   """Builds MergedTensorStoreTimeSeries."""
   srcs = []
@@ -49,6 +50,7 @@ def _build_merged_data_source(
                 ),
                 timesteps_input=timesteps_input,
                 timesteps_output=timesteps_output,
+                timesteps_output_offset=timesteps_output_offset,
             ),
             prefetch=prefetch,
             prefix=name,
@@ -132,6 +134,7 @@ def create_datasets(
           timesteps_output=config.timesteps_output,
           prefetch=config.prefetch,
           sequential=config.sequential_data_source,
+          timesteps_output_offset=config.timesteps_output_offset,
       )
       for series in config.train_specs
   ])
@@ -156,6 +159,7 @@ def create_datasets(
           timesteps_output=config.timesteps_output,
           prefetch=config.prefetch,
           sequential=config.sequential_data_source,
+          timesteps_output_offset=config.timesteps_output_offset,
       )
       for series in config.val_specs
   ])
@@ -199,6 +203,7 @@ def create_inference_source_with_transforms(
       prefetch=config.prefetch,
       transforms=transforms,
       sequential=config.sequential_data_source,
+      timesteps_output_offset=config.timesteps_output_offset_infer,
   )
 
 

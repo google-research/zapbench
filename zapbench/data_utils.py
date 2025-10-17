@@ -238,7 +238,8 @@ def adjust_spec_for_condition_and_split(
   Returns:
     TensorStore Spec.
   """
-  if 't' not in spec.domain.labels:
+  domain = spec.domain
+  if domain is None or 't' not in domain.labels:
     raise ValueError('Required dimension label `t` not found in spec.')
 
   inclusive_min, exclusive_max = adjust_condition_bounds_for_split(

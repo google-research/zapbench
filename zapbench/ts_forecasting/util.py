@@ -14,6 +14,7 @@
 
 """Utilities."""
 
+from collections.abc import Mapping
 import json
 import math
 import re
@@ -259,7 +260,7 @@ def create_ts_spec(
     compression: Optional[dict[str, Any]] = None,
     delete_existing: bool = True,
     driver: str = 'zarr',
-) -> ts.TensorStore:
+) -> Mapping[str, Any]:
   """Creates a TensorStore."""
   spec = {
       'create': True,

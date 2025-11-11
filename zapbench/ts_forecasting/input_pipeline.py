@@ -138,6 +138,17 @@ def create_datasets(
       )
       for series in config.train_specs
   ])
+  val_source = data_source.ConcatenatedTensorStoreTimeSeries(*[
+      _build_merged_data_source(
+          series=series,
+          timesteps_input=config.timesteps_input,
+          timesteps_output=config.timesteps_output,
+          prefetch=config.prefetch,
+          sequential=config.sequential_data_source,
+          timesteps_output_offset=config.timesteps_output_offset,
+      )
+      for series in config.val_specs
+  ])
   train_sampler = grain.IndexSampler(
       num_records=len(train_source),
       shuffle=True,
@@ -151,18 +162,6 @@ def create_datasets(
       operations=transformations,
       worker_count=config.grain_num_workers,
   )
-
-  val_source = data_source.ConcatenatedTensorStoreTimeSeries(*[
-      _build_merged_data_source(
-          series=series,
-          timesteps_input=config.timesteps_input,
-          timesteps_output=config.timesteps_output,
-          prefetch=config.prefetch,
-          sequential=config.sequential_data_source,
-          timesteps_output_offset=config.timesteps_output_offset,
-      )
-      for series in config.val_specs
-  ])
   val_sampler = grain.IndexSampler(
       num_records=len(val_source),
       shuffle=False,

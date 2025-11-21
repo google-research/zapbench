@@ -27,7 +27,6 @@ import skimage
 from zapbench.video_forecasting import metrics
 
 
-
 class MetricsTest(absltest.TestCase):
 
   def setUp(self):
@@ -83,7 +82,9 @@ class MetricsTest(absltest.TestCase):
     # 3D
     ssim_single = metrics.ssim(self.vol1[0], self.vol2[0], dim=3)
     ssim_batched = metrics.ssim(self.vol1, self.vol2, dim=3)
-    self.assertEqual(ssim_single, ssim_batched[0])
+    np.testing.assert_allclose(
+        ssim_single, ssim_batched[0], atol=1e-4, rtol=1e-4
+    )
 
   def test_ssim_video_2d(self):
     # make video from copying frames

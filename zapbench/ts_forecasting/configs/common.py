@@ -103,12 +103,13 @@ def get_config(
     num_classes: Number of classes for categorical output head.
     train_conditions: Conditions used for training, as string separated by '+'.
     runlocal: Whether running locally or remotely.
-    timeseries: Name of the timeseries in `constants.SPECS`.
-    covariate_series: Name of the covariates in `constants.COVARIATE_SPECS`.
+    timeseries: Name of the timeseries.
+    covariate_series: Name of the covariates.
     val_ckpt_every_steps: Frequency of validation/checkpointing.
     log_loss_every_steps: Frequency of logging loss.
     seed: Optional random seed. Uses a randomly generated seed if None or
       integer small than zero.
+    soma_ids: Colon-separated list of soma IDs.
 
   Returns:
     A `mlc.ConfigDict` instance with the common configuration options.
@@ -218,7 +219,7 @@ def get_config(
   c.prediction_window_length = constants.PREDICTION_WINDOW_LENGTH
   c.num_warmup_infer_steps = 0
   c.infer_spec = {
-      'timeseries': data_utils.get_spec(c.timeseries, soma_ids).to_json(),
+      'timeseries': (data_utils.get_spec(c.timeseries, soma_ids).to_json()),
       'covariates': data_utils.get_covariate_spec(c.covariate_series).to_json(),
   }
   c.infer_sets = get_infer_sets(

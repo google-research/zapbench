@@ -1,4 +1,4 @@
-# Copyright 2025 The Google Research Authors.
+# Copyright 2026 The Google Research Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,13 +15,14 @@
 """Tests for Nlinear models."""
 
 from absl.testing import absltest
+from absl.testing import parameterized
 from jax import random
 import jax.numpy as jnp
 import numpy as np
 from zapbench.models import nlinear
 
 
-class NlinearTest(absltest.TestCase):
+class NlinearTest(parameterized.TestCase):
 
   def test_Nlinear(self):
     c = nlinear.NlinearConfig(

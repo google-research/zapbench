@@ -254,7 +254,7 @@ def get_rastermap_indices(timeseries: str) -> np.ndarray:
   return json.loads(
       file.Path(
           constants.RASTERMAP_SORTINGS[timeseries],
-      ).read_text('rt')
+      ).read_text()
   )
 
 

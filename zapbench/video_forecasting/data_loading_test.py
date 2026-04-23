@@ -61,7 +61,9 @@ class DataLoadingTest(absltest.TestCase):
     }
     c.data_config.tensorstore_stimulus_config = ts_stim_config
     self.config = c
-    self.frame_sharding = jax.sharding.SingleDeviceSharding(jax.devices()[0])
+    self.frame_sharding = jax.sharding.make_single_device_sharding(
+        jax.devices()[0]
+    )
     self.stim_sharding = self.frame_sharding
     self.lead_time_sharding = self.frame_sharding
     self.shardings = (

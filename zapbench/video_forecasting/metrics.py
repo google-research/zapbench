@@ -261,9 +261,9 @@ def ssim(
   mu00 = mu0 * mu0
   mu11 = mu1 * mu1
   mu01 = mu0 * mu1
-  sigma00 = filt_fn(a**2) - mu00
-  sigma11 = filt_fn(b**2) - mu11
-  sigma01 = filt_fn(a * b) - mu01
+  sigma00 = filt_fn(a**2) - mu00  # pyrefly: ignore[unsupported-operation]
+  sigma11 = filt_fn(b**2) - mu11  # pyrefly: ignore[unsupported-operation]
+  sigma01 = filt_fn(a * b) - mu01  # pyrefly: ignore[unsupported-operation]
 
   # Clip the variances and covariances to valid values.
   # Variance must be non-negative:
@@ -280,6 +280,6 @@ def ssim(
   denom = (mu00 + mu11 + c1) * (sigma00 + sigma11 + c2)
   ssim_map = numer / denom
   if video and has_batch_axis:  # unfold video axis and optionally avg. over it
-    ssim_map = ssim_map.reshape((batch_dim, -1, *ssim_map.shape[1:]))
+    ssim_map = ssim_map.reshape((batch_dim, -1, *ssim_map.shape[1:]))  # pyrefly: ignore[no-matching-overload]
   ssim_value = jnp.mean(ssim_map, list(range(1 if has_batch_axis else 0, rank)))
   return ssim_map if return_map else ssim_value

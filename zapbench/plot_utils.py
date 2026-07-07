@@ -48,7 +48,7 @@ def register_and_enable_custom_theme(
     font_size: int = 28, font_family: str = 'Arial'
 ):
   """Registers and enables custom theme."""
-  alt.themes.register(
+  alt.themes.register(  # pyrefly: ignore[missing-attribute]
       'custom',
       lambda: {
           'config': {
@@ -77,7 +77,7 @@ def register_and_enable_custom_theme(
           }
       },
   )
-  alt.themes.enable('custom')
+  alt.themes.enable('custom')  # pyrefly: ignore[missing-attribute]
 
 
 def get_ordered_elements_and_values(
@@ -152,7 +152,7 @@ def create_facet_chart(
 
   facet_kwargs = {'spacing': facet_spacing}
   if row is not None:
-    facet_kwargs['row'] = alt.Row(
+    facet_kwargs['row'] = alt.Row(  # pyrefly: ignore[bad-assignment]
         row,
         header=alt.Header(
             labels=row_labels,
@@ -162,7 +162,7 @@ def create_facet_chart(
         title=row_title,
     )
   if column is not None:
-    facet_kwargs['column'] = alt.Column(
+    facet_kwargs['column'] = alt.Column(  # pyrefly: ignore[bad-assignment]
         column,
         header=alt.Header(
             labels=column_labels,
@@ -241,14 +241,14 @@ def _get_scales(
 
   methods, colors = get_ordered_elements_and_values(
       elements=data['method'].unique(),
-      ordered_mapping=METHOD_TO_HEX_COLOR if color_map is None else color_map,
+      ordered_mapping=METHOD_TO_HEX_COLOR if color_map is None else color_map,  # pyrefly: ignore[bad-argument-type]
       default_value='#000000',
       excluded_elements=exclude,
   )
   contexts, shapes = get_ordered_elements_and_values(
       elements=data['context'].unique(),
       ordered_mapping=(
-          CONTEXT_LABEL_TO_SHAPE if shape_map is None else shape_map),
+          CONTEXT_LABEL_TO_SHAPE if shape_map is None else shape_map),  # pyrefly: ignore[bad-argument-type]
       default_value='circle',
   )
 
@@ -274,7 +274,7 @@ def _get_scales(
       scale=alt.Scale(domain=contexts, range=shapes),
       sort=[],
   )
-  return x_scale, y_scale, color_scale, shape_scale
+  return x_scale, y_scale, color_scale, shape_scale  # pyrefly: ignore[bad-return]
 
 
 def _get_tooltip_href_kwargs(data: pd.DataFrame, metric: str) -> dict[str, Any]:

@@ -105,7 +105,7 @@ def create_train_state(
     inputs = (jnp.empty((1, config.data_config.timesteps_input, 1)),)
   else:
     inputs = (jnp.empty((1,) + item_shape['input_frames']),)
-  variables = model.init(rng, *inputs, train=False)
+  variables = model.init(rng, *inputs, train=False)  # pyrefly: ignore[bad-argument-type]
   params = variables['params']
   parameter_overview.log_parameter_overview(params)
   optimizer, schedule = training.get_optimizer(config)
@@ -128,7 +128,7 @@ def create_train_state(
 
 def inherit_annotations(cls: type[T]) -> type[T]:
   """Utility to inherit dataclass annotations of direct parent."""
-  cls.__annotations__.update(super(cls, cls).__annotations__)
+  cls.__annotations__.update(super(cls, cls).__annotations__)  # pyrefly: ignore[invalid-argument]
   return cls
 
 
@@ -136,12 +136,12 @@ def inherit_annotations(cls: type[T]) -> type[T]:
 class BaseMetrics(metrics.Collection):
   """Base metrics for video prediction."""
 
-  learning_rate: metrics.LastValue.from_output('learning_rate')
-  loss: metrics.Average.from_output('loss')
-  loss_std: metrics.Std.from_output('loss')
-  mse: metrics.Average.from_fun(vid_metrics.mse)
-  mae: metrics.Average.from_fun(vid_metrics.mae)
-  psnr: metrics.Average.from_fun(vid_metrics.psnr)
+  learning_rate: metrics.LastValue.from_output('learning_rate')  # pyrefly: ignore[invalid-annotation]
+  loss: metrics.Average.from_output('loss')  # pyrefly: ignore[invalid-annotation]
+  loss_std: metrics.Std.from_output('loss')  # pyrefly: ignore[invalid-annotation]
+  mse: metrics.Average.from_fun(vid_metrics.mse)  # pyrefly: ignore[invalid-annotation]
+  mae: metrics.Average.from_fun(vid_metrics.mae)  # pyrefly: ignore[invalid-annotation]
+  psnr: metrics.Average.from_fun(vid_metrics.psnr)  # pyrefly: ignore[invalid-annotation]
 
 
 @flax.struct.dataclass
@@ -149,10 +149,10 @@ class BaseMetrics(metrics.Collection):
 class DetailedMetrics(BaseMetrics):
   """Detailed but expensive metrics for video prediction."""
 
-  trace_mse: metrics.Average.from_fun(
+  trace_mse: metrics.Average.from_fun(  # pyrefly: ignore[invalid-annotation]
       vid_metrics.make_trace_based_metric(vid_metrics.mse)
   )
-  trace_mae: metrics.Average.from_fun(
+  trace_mae: metrics.Average.from_fun(  # pyrefly: ignore[invalid-annotation]
       vid_metrics.make_trace_based_metric(vid_metrics.mae)
   )
 
@@ -186,7 +186,7 @@ def loss_and_predictions(
   num_terms = np.prod(predictions.shape[:-1])  # without feature shape
   loss_factor = num_terms / num_terms_observed
   if criterion in ['mse', 'mae']:
-    delta = (predictions - targets) * mask
+    delta = (predictions - targets) * mask  # pyrefly: ignore[unsupported-operation]
     if criterion == 'mae':
       loss = jnp.abs(delta).mean() * loss_factor
     else:  # 'mse'
@@ -204,9 +204,9 @@ def loss_and_predictions(
     target_probs = target_probs.reshape(target_shape[:-1] + (num_bins,))
     losses = optax.losses.softmax_cross_entropy(predictions, target_probs)
     if 'trace' in criterion:
-      loss = vid_metrics.extract_traces(losses, trace_mask, trace_counts).mean()
+      loss = vid_metrics.extract_traces(losses, trace_mask, trace_counts).mean()  # pyrefly: ignore[bad-argument-type]
     else:
-      loss = (losses * mask.squeeze(axis=-1)).mean() * loss_factor
+      loss = (losses * mask.squeeze(axis=-1)).mean() * loss_factor  # pyrefly: ignore[bad-argument-type]
     prediction_shape = predictions.shape
     predictions = jax.vmap(hlg_transform.transform_from_probs)(
         nn.softmax(predictions.reshape(-1, num_bins))
@@ -357,7 +357,7 @@ def eval_step(
   )
   loss, predictions = loss_and_predictions(
       config.criterion,
-      predictions,
+      predictions,  # pyrefly: ignore[bad-argument-type]
       batch['output_frames'],
       loss_mask,
       trace_mask.segment_ids,
@@ -462,7 +462,7 @@ def get_mask(
   if subsample:
     s = masks.out_to_in_scale_xyz
     logging.info('Downsampling mask by %r', s)
-    loss_mask = loss_mask[::s[0], ::s[1], ::s[2]]
+    loss_mask = loss_mask[::s[0], ::s[1], ::s[2]]  # pyrefly: ignore[bad-index]
 
   # make mask binary and expand to have batch, time, and channel dimensions
   loss_mask = (loss_mask > 0).astype(bool)
@@ -515,7 +515,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict, workdir: str):
       return_masks=True,
       **loader_kwargs,
   )
-  trace_mask = masks.trace_mask
+  trace_mask = masks.trace_mask  # pyrefly: ignore[missing-attribute]
   num_eval_steps = (
       config.num_train_steps // config.eval_every_steps + 1
   ) * config.num_eval_steps
@@ -532,9 +532,9 @@ def train_and_evaluate(config: ml_collections.ConfigDict, workdir: str):
       config,
       model_rng,
       cpoint_dir,
-      train_loader.tensor_source.item_shape,
+      train_loader.tensor_source.item_shape,  # pyrefly: ignore[missing-attribute]
   )
-  train_loader.set_initial_batch(int(state.step))
+  train_loader.set_initial_batch(int(state.step))  # pyrefly: ignore[missing-attribute]
   _, dropout_rng = jax.random.split(rng)
   initial_step = int(state.step) + 1
 
@@ -549,9 +549,9 @@ def train_and_evaluate(config: ml_collections.ConfigDict, workdir: str):
   # flat sharding on the first dimension of parameter shapes.
   state = jax.tree.map(replicate, state)
   trace_mask = jax.tree.map(replicate, trace_mask)
-  loss_mask = jax.tree.map(replicate, get_mask(config.loss_mask, masks))
+  loss_mask = jax.tree.map(replicate, get_mask(config.loss_mask, masks))  # pyrefly: ignore[bad-argument-type]
   input_mask = jax.tree.map(replicate,
-                            get_mask(config.input_mask, masks, subsample=True))
+                            get_mask(config.input_mask, masks, subsample=True))  # pyrefly: ignore[bad-argument-type]
   dropout_rng = jax.tree.map(replicate, dropout_rng)
 
   def train_fn(
@@ -566,7 +566,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict, workdir: str):
         config,
         optimizer,
         schedule,
-        dropout_rng,
+        dropout_rng,  # pyrefly: ignore[bad-argument-type]
         trace_mask,
         loss_mask,
         input_mask,
@@ -689,7 +689,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict, workdir: str):
         scalars = make_tboard_compatible(
             train_metrics.compute(), prefix='train'
         )
-        writer.write_scalars(step, scalars)
+        writer.write_scalars(step, scalars)  # pyrefly: ignore[bad-argument-type]
         train_metrics = jax.tree.map(replicate, metrics_cls.empty())
 
       if step % config.eval_every_steps == 0 or is_last_step:
@@ -723,7 +723,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict, workdir: str):
           scalars = make_tboard_compatible(
               eval_metrics.compute(), prefix='eval'
           )
-          writer.write_scalars(step, scalars)
+          writer.write_scalars(step, scalars)  # pyrefly: ignore[bad-argument-type]
 
         free_and_delete(batch)
 

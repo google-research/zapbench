@@ -116,7 +116,7 @@ def get_config(
   """
   c = mlc.ConfigDict()
 
-  soma_ids = [int(x) for x in soma_ids.split(':') if x]
+  soma_ids = [int(x) for x in soma_ids.split(':') if x]  # pyrefly: ignore[bad-assignment]
 
   # Store/parse args
   c.output_head = output_head
@@ -199,7 +199,7 @@ def get_config(
       split='train',
       timeseries=c.timeseries,
       covariate_series=c.covariate_series,
-      soma_ids=soma_ids,
+      soma_ids=soma_ids,  # pyrefly: ignore[bad-argument-type]
   )
 
   # Validation
@@ -209,7 +209,7 @@ def get_config(
       split='val',
       timeseries=c.timeseries,
       covariate_series=c.covariate_series,
-      soma_ids=soma_ids,
+      soma_ids=soma_ids,  # pyrefly: ignore[bad-argument-type]
   )
   c.num_val_steps = -1  # = 0 to disable, = -1 to iterate over val batches
   c.val_pad_last_batch = False

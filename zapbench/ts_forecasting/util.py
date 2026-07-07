@@ -217,7 +217,7 @@ def get_digitize_bijector(
 def get_one_hot_bijector(num_classes: int) -> distrax.Bijector:
   """Gets bijector for one-hot encoding."""
   return distrax.Lambda(
-      forward=lambda x: jax.nn.one_hot(x[...], num_classes=num_classes),
+      forward=lambda x: jax.nn.one_hot(x[...], num_classes=num_classes),  # pyrefly: ignore[bad-index]
       inverse=lambda y: jnp.argmax(y, axis=-1),
       forward_log_det_jacobian=jnp.zeros_like,
       inverse_log_det_jacobian=jnp.zeros_like,
@@ -269,14 +269,14 @@ def create_ts_spec(
       'kvstore': path,
   }
   if driver == 'n5':
-    spec['metadata'] = {
+    spec['metadata'] = {  # pyrefly: ignore[bad-assignment]
         'dimensions': shape,
         'blockSize': shape if blocksize is None else blocksize,
         'dataType': dtype,
         'compression': {'type': 'raw'} if compression is None else compression,
     }
   elif driver == 'zarr':
-    spec['metadata'] = {
+    spec['metadata'] = {  # pyrefly: ignore[bad-assignment]
         'shape': shape,
         'chunks': shape if blocksize is None else blocksize,
         'dtype': dtype,
@@ -373,7 +373,7 @@ def get_per_step_metrics_from_dict(
         metric: results_dict[k],
     }
     if include_key:
-      row['key'] = k
+      row['key'] = k  # pyrefly: ignore[unsupported-operation]
     rows.append(row)
   return pd.DataFrame(rows)
 
@@ -402,4 +402,4 @@ def get_per_step_metrics_from_directory(
             get_condition_number_from_string(str(json_file))
         ]
       dfs.append(df)
-  return pd.concat(dfs)
+  return pd.concat(dfs)  # pyrefly: ignore[bad-return]

@@ -422,7 +422,7 @@ def get_dataset(
 
   if return_masks:
     trace_segs, max_id = load_segmentation(config)
-    trace_segs = trace_segs[
+    trace_segs = trace_segs[  # pyrefly: ignore[bad-index]
         tsource.x_indexer, tsource.y_indexer, tsource.z_indexer
     ]
     logging.info('Loaded trace seg. %r with %r cells', trace_segs.shape, max_id)
@@ -432,7 +432,7 @@ def get_dataset(
     # maintaining the order of traces for later association and comparison.
     if contiguous_segments:
       # make trace ids contiguous and ignore those not present
-      trace_segs, _ = labels.make_contiguous(trace_segs)
+      trace_segs, _ = labels.make_contiguous(trace_segs)  # pyrefly: ignore[bad-argument-type]
       _, trace_counts = np.unique(trace_segs.reshape(-1), return_counts=True)
       logging.info(
           'Modified trace mask to shape %r with %r unique segments remaining',
@@ -446,7 +446,7 @@ def get_dataset(
       trace_counts[ids] = counts
 
     brain_mask = load_brain_mask(config)
-    brain_mask = brain_mask[
+    brain_mask = brain_mask[  # pyrefly: ignore[bad-index]
         tsource.x_indexer, tsource.y_indexer, tsource.z_indexer
     ]
     trace_mask = TraceMask(trace_segs, trace_counts)

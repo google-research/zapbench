@@ -48,7 +48,7 @@ def main(argv: Sequence[str]) -> None:
   logging.info('JAX process: %d / %d', jax.process_index(), jax.process_count())
   logging.info('JAX devices: %r', jax.devices())
 
-  train.train_and_evaluate(FLAGS.config, _WORKDIR.value)
+  train.train_and_evaluate(FLAGS.config, _WORKDIR.value)  # pyrefly: ignore[bad-argument-type]
 
 
 if __name__ == '__main__':

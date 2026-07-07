@@ -273,7 +273,7 @@ def inference(
 
     # Inference.
     logging.info('Starting inference with checkpoint from step %d', step)
-    infer_key = jax.random.fold_in(key=infer_rng, data=step)
+    infer_key = jax.random.fold_in(key=infer_rng, data=step)  # pyrefly: ignore[bad-argument-type]
     for infer_set in config.infer_sets:
       name, start_idx, num_windows = (
           infer_set[k] for k in ('name', 'start_idx', 'num_windows')
@@ -318,7 +318,7 @@ def inference(
               model,
               head,
               flax_utils.unreplicate(train_state),
-              infer_source,
+              infer_source,  # pyrefly: ignore[bad-argument-type]
               start_idx=start_idx + window,
               num_steps=(
                   config.num_warmup_infer_steps +
@@ -327,15 +327,15 @@ def inference(
               prediction_window_length=config.prediction_window_length,
               infer_key=infer_key,
               covariates=tuple(config.covariates),
-              covariates_static=covariates_static,
+              covariates_static=covariates_static,  # pyrefly: ignore[bad-argument-type]
               with_carry=config.infer_with_carry,
           )
 
           # Indexing into first dimension of array since batch size is 1.
           # pylint: disable=undefined-variable
           if config.infer_save_array:
-            predictions_ds[window, ...] = predictions[0, :, :]
-            targets_ds[window, ...] = targets[0, :, :]
+            predictions_ds[window, ...] = predictions[0, :, :]  # pyrefly: ignore[unbound-name]
+            targets_ds[window, ...] = targets[0, :, :]  # pyrefly: ignore[unbound-name]
           # pylint: enable=undefined-variable
 
           if f'infer_{name}' in head.metrics:
@@ -355,14 +355,14 @@ def inference(
               np.array, infer_metrics.compute()
           )
           writer.write_scalars(
-              step, metrics_lib.make_dict_of_scalars(infer_metrics_cpu)
+              step, metrics_lib.make_dict_of_scalars(infer_metrics_cpu)  # pyrefly: ignore[bad-argument-type]
           )
         if config.infer_save_json:
           ts_utils.write_json(
               to_write={
                   k: float(v)
                   for k, v in metrics_lib.make_dict_of_scalars(
-                      infer_metrics_cpu
+                      infer_metrics_cpu  # pyrefly: ignore[unbound-name]
                   ).items()
               },
               kvstore=os.path.join(infer_prefix, f'{name}.json'),

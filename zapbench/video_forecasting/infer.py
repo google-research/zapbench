@@ -44,23 +44,23 @@ from zapbench.video_forecasting import train
 class Metrics(metrics.Collection):
   """Evaluation metrics for video prediction."""
 
-  step_mse: vid_metrics.PerStepAverage.from_fun(
+  step_mse: vid_metrics.PerStepAverage.from_fun(  # pyrefly: ignore[invalid-annotation]
       vid_metrics.make_per_step_metric(vid_metrics.mse)
   )
-  step_mae: vid_metrics.PerStepAverage.from_fun(
+  step_mae: vid_metrics.PerStepAverage.from_fun(  # pyrefly: ignore[invalid-annotation]
       vid_metrics.make_per_step_metric(vid_metrics.mae)
   )
-  step_psnr: vid_metrics.PerStepAverage.from_fun(
+  step_psnr: vid_metrics.PerStepAverage.from_fun(  # pyrefly: ignore[invalid-annotation]
       vid_metrics.make_per_step_metric(vid_metrics.psnr)
   )
-  trace_step_mse: vid_metrics.PerStepAverage.from_fun(
+  trace_step_mse: vid_metrics.PerStepAverage.from_fun(  # pyrefly: ignore[invalid-annotation]
       vid_metrics.make_per_step_metric(
           vid_metrics.make_trace_based_metric_with_extracted_traces(
               vid_metrics.mse
           )
       )
   )
-  trace_step_mae: vid_metrics.PerStepAverage.from_fun(
+  trace_step_mae: vid_metrics.PerStepAverage.from_fun(  # pyrefly: ignore[invalid-annotation]
       vid_metrics.make_per_step_metric(
           vid_metrics.make_trace_based_metric_with_extracted_traces(
               vid_metrics.mae
@@ -166,13 +166,13 @@ def predict(
       train=False,
       mutable=False,
   )
-  logging.log_first_n(logging.INFO, 'Preds shape: %r', 1, predictions.shape)
+  logging.log_first_n(logging.INFO, 'Preds shape: %r', 1, predictions.shape)  # pyrefly: ignore[missing-attribute]
   logging.log_first_n(
       logging.INFO, 'Targets shape: %r', 1, sample['output_frames'].shape
   )
   loss, predictions = train.loss_and_predictions(
       config.criterion,
-      predictions,
+      predictions,  # pyrefly: ignore[bad-argument-type]
       sample['output_frames'],
       loss_mask,
       trace_mask.segment_ids,
@@ -182,14 +182,14 @@ def predict(
     predictions = predictions * loss_mask
 
   trace_predictions = vid_metrics.extract_traces(
-      predictions,
-      trace_mask.segment_ids[..., jnp.newaxis],
-      trace_mask.counts,
+      predictions,  # pyrefly: ignore[bad-argument-type]
+      trace_mask.segment_ids[..., jnp.newaxis],  # pyrefly: ignore[bad-argument-type, bad-index]
+      trace_mask.counts,  # pyrefly: ignore[bad-argument-type]
   )
   trace_targets = vid_metrics.extract_traces(
-      sample['output_frames'],
-      trace_mask.segment_ids[..., jnp.newaxis],
-      trace_mask.counts,
+      sample['output_frames'],  # pyrefly: ignore[bad-argument-type]
+      trace_mask.segment_ids[..., jnp.newaxis],  # pyrefly: ignore[bad-argument-type, bad-index]
+      trace_mask.counts,  # pyrefly: ignore[bad-argument-type]
   )
 
   metrics_update = Metrics.single_from_model_output(
@@ -248,13 +248,13 @@ def predict_bw(
         train=False,
         mutable=False,
     )
-    logging.log_first_n(logging.INFO, 'Preds shape: %r', 1, predictions.shape)
+    logging.log_first_n(logging.INFO, 'Preds shape: %r', 1, predictions.shape)  # pyrefly: ignore[missing-attribute]
     logging.log_first_n(
         logging.INFO, 'Targets shape: %r', 1, sample['output_frames'].shape
     )
     loss, predictions = train.loss_and_predictions(
         config.criterion,
-        predictions,
+        predictions,  # pyrefly: ignore[bad-argument-type]
         sample['output_frames'],
         loss_mask,
         trace_mask.segment_ids,
@@ -270,13 +270,13 @@ def predict_bw(
 
   trace_predictions = vid_metrics.extract_traces(
       predictions,
-      trace_mask.segment_ids[..., jnp.newaxis],
-      trace_mask.counts,
+      trace_mask.segment_ids[..., jnp.newaxis],  # pyrefly: ignore[bad-argument-type, bad-index]
+      trace_mask.counts,  # pyrefly: ignore[bad-argument-type]
   )
   trace_targets = vid_metrics.extract_traces(
-      sample['output_frames'],
-      trace_mask.segment_ids[..., jnp.newaxis],
-      trace_mask.counts,
+      sample['output_frames'],  # pyrefly: ignore[bad-argument-type]
+      trace_mask.segment_ids[..., jnp.newaxis],  # pyrefly: ignore[bad-argument-type, bad-index]
+      trace_mask.counts,  # pyrefly: ignore[bad-argument-type]
   )
 
   metrics_update = Metrics.single_from_model_output(
@@ -383,8 +383,8 @@ def infer(config: ml_collections.ConfigDict, infer_workdir: str):
       sample_lead_time=False,  # manually set lead times for inference
       shuffle=False,
   )
-  trace_mask = masks.trace_mask
-  data_source = loader.tensor_source
+  trace_mask = masks.trace_mask  # pyrefly: ignore[missing-attribute]
+  data_source = loader.tensor_source  # pyrefly: ignore[missing-attribute]
   rng = jax.random.PRNGKey(exp_config.seed + jax.process_index())
 
   video_ts_path = (
@@ -507,7 +507,7 @@ def infer(config: ml_collections.ConfigDict, infer_workdir: str):
   state = jax.tree.map(replicate, state)
   trace_mask = jax.tree.map(replicate, trace_mask)
   loss_mask = jax.tree.map(
-      replicate, train.get_mask(exp_config.loss_mask, masks)
+      replicate, train.get_mask(exp_config.loss_mask, masks)  # pyrefly: ignore[bad-argument-type]
   )
   input_mask = jax.tree.map(
       replicate,
@@ -515,7 +515,7 @@ def infer(config: ml_collections.ConfigDict, infer_workdir: str):
           exp_config.input_mask
           if hasattr(exp_config, 'input_mask')
           else 'none',
-          masks,
+          masks,  # pyrefly: ignore[bad-argument-type]
           subsample=True,
       ),
   )

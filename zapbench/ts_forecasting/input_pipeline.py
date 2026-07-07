@@ -157,7 +157,7 @@ def create_datasets(
       shard_options=shard_options,
   )
   train_loader = grain.DataLoader(
-      data_source=train_source,
+      data_source=train_source,  # pyrefly: ignore[bad-argument-type]
       sampler=train_sampler,
       operations=transformations,
       worker_count=config.grain_num_workers,
@@ -170,7 +170,7 @@ def create_datasets(
       shard_options=shard_options,
   )
   val_loader = grain.DataLoader(
-      data_source=val_source,
+      data_source=val_source,  # pyrefly: ignore[bad-argument-type]
       sampler=val_sampler,
       operations=transformations,
       # For now, we do not parallelize the validation, because there is a bug on
@@ -200,7 +200,7 @@ def create_inference_source_with_transforms(
       timesteps_input=config.timesteps_input_infer,
       timesteps_output=config.timesteps_output_infer,
       prefetch=config.prefetch,
-      transforms=transforms,
+      transforms=transforms,  # pyrefly: ignore[bad-argument-type]
       sequential=config.sequential_data_source,
       timesteps_output_offset=config.timesteps_output_offset_infer,
   )

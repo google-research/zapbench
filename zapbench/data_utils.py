@@ -243,7 +243,7 @@ def adjust_spec_for_condition_and_split(
     raise ValueError('Required dimension label `t` not found in spec.')
 
   inclusive_min, exclusive_max = adjust_condition_bounds_for_split(
-      split, *get_condition_bounds(condition), num_timesteps_context
+      split, *get_condition_bounds(condition), num_timesteps_context  # pyrefly: ignore[bad-argument-type]
   )
 
   return spec[ts.d['t'][slice(inclusive_min, exclusive_max)]].translate_to[0]

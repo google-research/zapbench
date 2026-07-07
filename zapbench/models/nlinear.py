@@ -67,6 +67,6 @@ class Nlinear(nn.Module):
     x = x.transpose((0, 2, 1))  # BxT'xF
 
     if self.config.normalization:
-      return x + last_step  # pylint: disable=undefined-variable
+      return x + last_step  # pylint: disable=undefined-variable  # pyrefly: ignore[unbound-name]
     else:
       return x

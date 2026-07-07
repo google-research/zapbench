@@ -251,5 +251,5 @@ class Tide(nn.Module):
     x = x.transpose((0, 2, 1))  # BxT'xF
 
     if self.config.instance_norm and self.config.revert_instance_norm:
-      x, _ = rev_in(x, stats)  # pylint: disable=undefined-variable
+      x, _ = rev_in(x, stats)  # pylint: disable=undefined-variable  # pyrefly: ignore[unbound-name]
     return x

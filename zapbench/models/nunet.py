@@ -378,16 +378,16 @@ class Nunet(nn.Module):
       if cond_in is None or cond_out is None:
         raise ValueError('Conditioning requires inputs cond_in and cond_out')
       cond_in = cond_in.reshape(cond_in.shape[0], -1)  # [batch, t_in * f]
-      cond_in = DenseBlock(**dense_kwargs, name='cond_in_embed')(cond_in)
+      cond_in = DenseBlock(**dense_kwargs, name='cond_in_embed')(cond_in)  # pyrefly: ignore[bad-argument-type]
       cond_out = cond_out.reshape(cond_out.shape[0], -1)  # [batch, t_out * f]
-      cond_out = DenseBlock(**dense_kwargs, name='cond_out_embed')(cond_out)
+      cond_out = DenseBlock(**dense_kwargs, name='cond_out_embed')(cond_out)  # pyrefly: ignore[bad-argument-type]
       logging.info('Emb. cond_in %r cond_out %r', cond_in.shape, cond_out.shape)
     else:
       cond_in, cond_out = None, None
       logging.info('No conditioning')
 
     if self.config.time_conditioning:
-      cond_time = get_sinusoidal_embedding(timesteps, 32)
+      cond_time = get_sinusoidal_embedding(timesteps, 32)  # pyrefly: ignore[bad-argument-type]
     else:
       cond_time = None
 
@@ -417,7 +417,7 @@ class Nunet(nn.Module):
     x = x_shard_fn(x)
     for i in range(num_res_blocks_in[0]):
       x = remat_fn(ResBlock)(**res_block_kwargs, name=f'res_in0_b{i}')(
-          x, cond_in, cond_out, cond_time
+          x, cond_in, cond_out, cond_time  # pyrefly: ignore[bad-argument-type]
       )
       x = x_shard_fn(x)
     xs_resampled = [x]
@@ -430,7 +430,7 @@ class Nunet(nn.Module):
       r = d + 1
       for i in range(blocks):
         x_res = remat_fn(ResBlock)(**res_block_kwargs, name=f'res_in{r}_b{i}')(
-            x_res, cond_in, cond_out, cond_time
+            x_res, cond_in, cond_out, cond_time  # pyrefly: ignore[bad-argument-type]
         )
         x_res = x_shard_fn(x_res)
       xs_resampled.append(x_res)
@@ -471,7 +471,7 @@ class Nunet(nn.Module):
 
       for i in range(blocks):
         x = remat_fn(ResBlock)(**res_block_kwargs, name=f'res_out{d}_b{i}')(
-            x, cond_in, cond_out, cond_time
+            x, cond_in, cond_out, cond_time  # pyrefly: ignore[bad-argument-type]
         )
         x = x_shard_fn(x)
 
@@ -496,7 +496,7 @@ class Nunet(nn.Module):
 
       for i in range(self.config.num_res_blocks_up):
         x = remat_fn(ResBlock)(**res_block_kwargs, name=f'res_up{u}_b{i}')(
-            x, cond_in, cond_out, cond_time
+            x, cond_in, cond_out, cond_time  # pyrefly: ignore[bad-argument-type]
         )
         x = x_shard_fn(x)
 

@@ -63,7 +63,7 @@ def merge_batch_stats(replicated_state: TrainState) -> TrainState:
   """Merge model batch stats."""
   if jax.tree_util.tree_leaves(replicated_state.batch_stats):
     cross_replica_mean = jax.pmap(lambda x: jax.lax.pmean(x, 'x'), 'x')
-    return replicated_state.replace(
+    return replicated_state.replace(  # pyrefly: ignore[missing-attribute]
         batch_stats=cross_replica_mean(replicated_state.batch_stats)
     )
   else:
@@ -224,10 +224,10 @@ def pred_step(
       'train': False,
   }
   if initial_carry is not None:
-    model_kwargs['initial_carry'] = initial_carry
+    model_kwargs['initial_carry'] = initial_carry  # pyrefly: ignore[bad-assignment]
   if return_carry:
     model_kwargs['return_carry'] = return_carry
-  return model.apply(
+  return model.apply(  # pyrefly: ignore[bad-return]
       variables,
       *[batch[k] for k in it.chain(('timeseries_input',), covariates)],
       **model_kwargs,
@@ -454,7 +454,7 @@ def train_and_evaluate(
         })
 
       with jax.profiler.StepTraceAnnotation('train', step_num=step):
-        batch = next(train_iter)
+        batch = next(train_iter)  # pyrefly: ignore[bad-argument-type]
         if (
             'covariates_static' in config.covariates
             and covariates_static is not None

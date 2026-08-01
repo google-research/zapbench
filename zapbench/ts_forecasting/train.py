@@ -486,18 +486,18 @@ def train_and_evaluate(
         )
         train_metrics = None
         if config.early_stopping_metric in train_metrics_cpu:
-          _, early_stop = early_stop.update(
+          _, early_stop = early_stop.update(  # pyrefly: ignore[missing-attribute]
               train_metrics_cpu[config.early_stopping_metric], step
           )
 
       # Early stopping.
-      if config.early_stopping and early_stop.should_stop:
+      if config.early_stopping and early_stop.should_stop:  # pyrefly: ignore[missing-attribute]
         is_last_step = True
         last_step_message = 'Met early stopping criterion at step %d.' % step
         logging.info(last_step_message)
 
       # Max runtime stopping.
-      max_runtime_stop = max_runtime_stop.update()
+      max_runtime_stop = max_runtime_stop.update()  # pyrefly: ignore[missing-attribute]
       if config.max_runtime_stopping and max_runtime_stop.should_stop:
         is_last_step = True
         last_step_message = (
@@ -553,11 +553,11 @@ def train_and_evaluate(
         writer.write_scalars(
             step, metrics_lib.make_dict_of_scalars(val_metrics_cpu)
         )
-        track_best_val_loss_step = track_best_val_loss_step.update(
+        track_best_val_loss_step = track_best_val_loss_step.update(  # pyrefly: ignore[missing-attribute]
             val_metrics_cpu[config.early_stopping_metric], step
         )
         if config.early_stopping_metric in val_metrics_cpu:
-          _, early_stop = early_stop.update(
+          _, early_stop = early_stop.update(  # pyrefly: ignore[missing-attribute]
               val_metrics_cpu[config.early_stopping_metric], step
           )
         ran_validation = True

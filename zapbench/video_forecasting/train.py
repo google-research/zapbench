@@ -200,7 +200,7 @@ def loss_and_predictions(
         num_bins=num_bins, sigma_ratio=0.75, min_value=-0.25, max_value=1.5
     )
     target_shape = targets.shape
-    target_probs = jax.vmap(hlg_transform.transform_to_probs)(targets.flatten())
+    target_probs = jax.vmap(hlg_transform.transform_to_probs)(targets.flatten())  # pyrefly: ignore[bad-argument-type]
     target_probs = target_probs.reshape(target_shape[:-1] + (num_bins,))
     losses = optax.losses.softmax_cross_entropy(predictions, target_probs)
     if 'trace' in criterion:

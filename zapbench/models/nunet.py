@@ -476,7 +476,7 @@ class Nunet(nn.Module):
         x = x_shard_fn(x)
 
       if d < len(resample_factors):
-        x = upsample(x, resample_factor)
+        x = upsample(x, resample_factor)  # pyrefly: ignore[bad-argument-type]
         logging.info('Upsampled to shape %r', x.shape)
 
     # Upsample to superresolution

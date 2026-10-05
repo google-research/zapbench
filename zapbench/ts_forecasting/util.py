@@ -199,7 +199,7 @@ def get_digitize_bijector(
           num_bins=num_classes,
           extend_upper_interval=False,
       )
-      - (forward_bins[1] - forward_bins[0]) / 2.0
+      - (upper - lower) / (2.0 * num_classes)
   )
   return distrax.Lambda(
       forward=lambda x: jnp.digitize(  # pylint: disable=g-long-lambda

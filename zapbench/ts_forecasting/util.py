@@ -217,7 +217,7 @@ def get_digitize_bijector(
 def get_one_hot_bijector(num_classes: int) -> distrax.Bijector:
   """Gets bijector for one-hot encoding."""
   return distrax.Lambda(
-      forward=lambda x: jax.nn.one_hot(x[...], num_classes=num_classes),  # pyrefly: ignore[bad-index]
+      forward=lambda x: jax.nn.one_hot(x[...], num_classes=num_classes),
       inverse=lambda y: jnp.argmax(y, axis=-1),
       forward_log_det_jacobian=jnp.zeros_like,
       inverse_log_det_jacobian=jnp.zeros_like,
@@ -402,4 +402,4 @@ def get_per_step_metrics_from_directory(
             get_condition_number_from_string(str(json_file))
         ]
       dfs.append(df)
-  return pd.concat(dfs)  # pyrefly: ignore[bad-return]
+  return pd.concat(dfs)

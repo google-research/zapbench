@@ -314,7 +314,7 @@ def train_step(
   )
   metrics_cls = DetailedMetrics if config.detailed_metrics else BaseMetrics
   metrics_update = metrics_cls.single_from_model_output(**metrics_kwargs)
-  return new_state, metrics_update  # pytype: disable=bad-return-type
+  return new_state, metrics_update
 
 
 def eval_step(
@@ -612,7 +612,7 @@ def train_and_evaluate(config: ml_collections.ConfigDict, workdir: str):
   out_shardings_eval = replicate_sharding
 
   def to_global_array(batch):
-    return {k: v.to_global() for k, v in batch.items()}  # pytype: disable=attribute-error
+    return {k: v.to_global() for k, v in batch.items()}
 
   def free_and_delete(batch):
     for k in batch:

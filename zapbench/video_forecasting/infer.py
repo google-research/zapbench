@@ -429,9 +429,9 @@ def infer(config: ml_collections.ConfigDict, infer_workdir: str):
     video_ts = video_ts.transpose([0, 4, 1, 2, 3, 5])[
         :,
         :,
-        data_source.x_indexer,  # pytype: disable=attribute-error
-        data_source.y_indexer,  # pytype: disable=attribute-error
-        data_source.z_indexer,  # pytype: disable=attribute-error
+        data_source.x_indexer,
+        data_source.y_indexer,
+        data_source.z_indexer,
     ]
     video_writer = TsForecastWriter(video_ts, max_queue=config.write_queue)
   else:
@@ -460,7 +460,7 @@ def infer(config: ml_collections.ConfigDict, infer_workdir: str):
     } | config.tensorstore_config.to_dict()
     trace_ts_path = video_ts_path.replace('frames', 'traces')
     logging.info('Video tensorstore path %s', trace_ts_path)
-    trace_config['kvstore']['path'] = trace_ts_path  # pytype: disable=unsupported-operands
+    trace_config['kvstore']['path'] = trace_ts_path
     # writing always [timesteps, num_traces]
     trace_ts = ts.open(trace_config).result().transpose([0, 2, 1, 3])
     trace_writer = TsForecastWriter(trace_ts, max_queue=config.write_queue)
@@ -502,7 +502,7 @@ def infer(config: ml_collections.ConfigDict, infer_workdir: str):
     )
 
   def to_global_array(sample):
-    return {k: v.to_global() for k, v in sample.items()}  # pytype: disable=attribute-error
+    return {k: v.to_global() for k, v in sample.items()}
 
   state = jax.tree.map(replicate, state)
   trace_mask = jax.tree.map(replicate, trace_mask)

@@ -169,7 +169,7 @@ def train_step(
       grad, train_state.opt_state, train_state.params
   )
   new_params = optax.apply_updates(train_state.params, updates)
-  new_state = train_state.replace(  # pytype: disable=attribute-error
+  new_state = train_state.replace(  # pyrefly: ignore[missing-attribute]
       step=train_state.step + 1,
       params=new_params,
       opt_state=new_opt_state,
@@ -461,7 +461,7 @@ def train_and_evaluate(
         ):
           batch['covariates_static'] = covariates_static.repeat(
               jax.local_device_count(), axis=0
-          )  # pytype: disable=unsupported-operands
+          )
         batch = training.reshape_batch_local_devices(batch)
         train_state, metrics_update = p_train_step(
             train_state=train_state, batch=batch
@@ -530,7 +530,7 @@ def train_and_evaluate(
               ):
                 batch['covariates_static'] = covariates_static.repeat(
                     jax.local_device_count(), axis=0
-                )  # pytype: disable=unsupported-operands
+                )
               batch = training.reshape_batch_local_devices(batch)
               metrics_update = flax_utils.unreplicate(
                   p_val_step(

@@ -237,7 +237,8 @@ def ssim(
 
   def _filt_fn(v, axis) -> chex.Array:
     v_flat = jnp.moveaxis(v, axis, -1).reshape((-1, v.shape[axis]))
-    v_filt_shape = (v.shape[0],) if has_batch_axis else ()
+    # Unbatched videos also have a leading frame axis that must not be filtered.
+    v_filt_shape = (v.shape[0],) if has_batch_axis or video else ()
     if dim == 3 and axis != -4:
       v_filt_shape += (v.shape[-4],)
     if axis != -3:

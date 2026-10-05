@@ -129,8 +129,8 @@ class TensorStoreTimeSeries:
           self.volume[t_indexer_output, self.n_indexer].read().result()
       )
     else:
-      input_array = self.array[t_indexer_input, self.n_indexer]
-      output_array = self.array[t_indexer_output, self.n_indexer]
+      input_array = self.array[t_indexer_input, self.n_indexer].copy()
+      output_array = self.array[t_indexer_output, self.n_indexer].copy()
     return self._apply_transforms({
         'timestep': record_key,
         f'{self.prefix}_input': input_array,
